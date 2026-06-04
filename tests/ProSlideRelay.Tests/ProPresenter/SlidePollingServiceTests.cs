@@ -116,6 +116,9 @@ public sealed class SlidePollingServiceTests
         public Task<string?> GetVersionAsync(CancellationToken ct = default) =>
             Task.FromResult<string?>("ProPresenter");
 
+        public Task<string> GetRawSlideJsonAsync(CancellationToken ct = default) =>
+            Task.FromResult("{}");
+
         public Task<SlideStatus> GetCurrentSlideAsync(CancellationToken ct = default)
         {
             if (_queue is { Count: > 0 })

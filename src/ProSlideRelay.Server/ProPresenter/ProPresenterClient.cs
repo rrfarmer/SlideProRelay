@@ -58,6 +58,18 @@ public sealed class ProPresenterClient : IProPresenterClient
         return new SlideInfo(entry.Uuid, entry.Text, entry.Notes);
     }
 
+    public async Task<string> GetRawSlideJsonAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            return await _http.GetStringAsync("/v1/status/slide", ct);
+        }
+        catch (Exception ex) when (IsConnectionFailure(ex))
+        {
+            return $"{{\"error\":\"unavailable\",\"message\":{JsonSerializer.Serialize(ex.Message)}}}";
+        }
+    }
+
     private static bool IsConnectionFailure(Exception ex) =>
         ex is HttpRequestException or TaskCanceledException or OperationCanceledException or JsonException;
 }

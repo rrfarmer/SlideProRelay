@@ -1,5 +1,5 @@
-using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http.Features;
 using ProSlideRelay.Server.ProPresenter;
 using ProSlideRelay.Server.ProPresenter.Models;
 using ProSlideRelay.Server.Startup;
@@ -25,6 +25,13 @@ var app = builder.Build();
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
 
+// Diagnostic: returns exactly what ProPresenter sends, unmodified
+app.MapGet("/api/raw", async (IProPresenterClient client) =>
+{
+    var raw = await client.GetRawSlideJsonAsync();
+    return Results.Content(raw, "application/json");
+});
+
 app.MapGet("/api/current", (SlideCache cache) =>
 {
     var status = cache.Latest;
@@ -42,6 +49,9 @@ app.MapGet("/events", async (SlideCache cache, HttpContext ctx) =>
     ctx.Response.Headers.CacheControl = "no-cache";
     ctx.Response.Headers.Connection = "keep-alive";
 
+    // Disable response buffering so events reach the browser immediately
+    ctx.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
+
     var ct = ctx.RequestAborted;
     var channel = System.Threading.Channels.Channel.CreateBounded<SlideStatus>(
         new System.Threading.Channels.BoundedChannelOptions(4)
@@ -50,10 +60,17 @@ app.MapGet("/events", async (SlideCache cache, HttpContext ctx) =>
         });
 
     // Send current state immediately so the browser has something on connect
-    if (cache.Latest is { } current)
-        await WriteSseEvent(ctx.Response, current, ct);
+    if (cache.Latest is { } latest)
+        await WriteSseEvent(ctx.Response, latest, ct);
 
     using var sub = cache.Subscribe(status => channel.Writer.TryWrite(status));
+
+    using var heartbeat = new PeriodicTimer(TimeSpan.FromSeconds(15));
+    var heartbeatTask = Task.Run(async () =>
+    {
+        while (!ct.IsCancellationRequested && await heartbeat.WaitForNextTickAsync(ct).ConfigureAwait(false))
+            channel.Writer.TryWrite(cache.Latest ?? new SlideStatus(null, null, ConnectionState.Unavailable, DateTimeOffset.UtcNow));
+    }, ct);
 
     try
     {
@@ -105,13 +122,14 @@ static string HtmlPage() => """
 
         #status {
           font-size: 0.75rem;
-          color: #666;
+          color: #888;
           text-align: right;
           margin-bottom: 1rem;
           min-height: 1rem;
+          letter-spacing: 0.03em;
         }
-        #status.unavailable { color: #c00; }
-        #status.connected   { color: #0a0; }
+        #status.unavailable { color: #c44; }
+        #status.connected   { color: #4c4; }
 
         #current {
           flex: 1;
@@ -153,10 +171,13 @@ static string HtmlPage() => """
 
           es.onmessage = (e) => {
             const d = JSON.parse(e.data);
-            statusEl.textContent = d.connection === 'connected' ? 'Live' : 'ProPresenter offline';
+            const connected = d.connection === 'connected';
+            statusEl.textContent = connected
+              ? (d.current?.text ? '● Live' : '● Live — no slide text')
+              : '● ProPresenter offline';
             statusEl.className   = d.connection;
             currentEl.textContent = d.current?.text ?? '';
-            nextEl.textContent    = d.next?.text    ? 'Next: ' + d.next.text : '';
+            nextEl.textContent    = d.next?.text ? 'Next: ' + d.next.text : '';
           };
 
           es.onerror = () => {

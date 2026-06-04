@@ -6,4 +6,5 @@ public interface IProPresenterClient
 {
     Task<string?> GetVersionAsync(CancellationToken ct = default);
     Task<SlideStatus> GetCurrentSlideAsync(CancellationToken ct = default);
+    Task<string> GetRawSlideJsonAsync(CancellationToken ct = default);
 }
