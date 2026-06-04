@@ -56,6 +56,35 @@ public sealed class ProPresenterClientTests
         Assert.Null(status.Next);
     }
 
+    [Theory]
+    [InlineData(System.Net.HttpStatusCode.NotFound)]
+    [InlineData(System.Net.HttpStatusCode.InternalServerError)]
+    [InlineData(System.Net.HttpStatusCode.NoContent)]
+    public async Task GetCurrentSlide_WhenReachableButNonSuccess_ReturnsConnectedNoContent(
+        System.Net.HttpStatusCode statusCode)
+    {
+        // "Clear All" in ProPresenter can yield a non-success status with nothing
+        // live. That's reachable-but-empty, which must NOT read as disconnected.
+        var client = BuildClient(new FakeHttpHandler("", statusCode));
+        var status = await client.GetCurrentSlideAsync();
+
+        Assert.Equal(ConnectionState.Connected, status.Connection);
+        Assert.Null(status.Current);
+        Assert.Null(status.Next);
+    }
+
+    [Fact]
+    public async Task GetCurrentSlide_WhenReachableButEmptyBody_ReturnsConnectedNoContent()
+    {
+        // 200 OK with an empty body — another "cleared" shape. Reachable, no content.
+        var client = BuildClient(new FakeHttpHandler(""));
+        var status = await client.GetCurrentSlideAsync();
+
+        Assert.Equal(ConnectionState.Connected, status.Connection);
+        Assert.Null(status.Current);
+        Assert.Null(status.Next);
+    }
+
     [Fact]
     public async Task GetCurrentSlide_UpdatedAt_IsRecentUtcTimestamp()
     {

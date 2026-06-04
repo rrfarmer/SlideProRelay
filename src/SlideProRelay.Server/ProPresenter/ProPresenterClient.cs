@@ -35,20 +35,48 @@ public sealed class ProPresenterClient : IProPresenterClient
 
     public async Task<SlideStatus> GetCurrentSlideAsync(CancellationToken ct = default)
     {
+        HttpResponseMessage response;
         try
         {
-            var response = await _http.GetFromJsonAsync<ProPresenterSlideResponse>(
-                "/v1/status/slide", JsonOptions, ct);
-
-            var current = ToSlideInfo(response?.Current);
-            var next = ToSlideInfo(response?.Next);
-
-            return new SlideStatus(current, next, ConnectionState.Connected, DateTimeOffset.UtcNow);
+            response = await _http.GetAsync("/v1/status/slide", ct);
         }
         catch (Exception ex) when (IsConnectionFailure(ex))
         {
+            // Genuine transport failure (refused, timeout, DNS) — ProPresenter is unreachable.
             _logger.LogDebug("ProPresenter unreachable: {Message}", ex.Message);
             return new SlideStatus(null, null, ConnectionState.Unavailable, DateTimeOffset.UtcNow);
+        }
+
+        using (response)
+        {
+            // We got an HTTP reply, so ProPresenter IS reachable. When nothing is
+            // live — e.g. after "Clear All" — ProPresenter may return a non-success
+            // status or an empty/odd body. That is "connected, nothing to show",
+            // NOT a disconnection. Only the transport failures above count as offline.
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogDebug(
+                    "ProPresenter reachable but returned {Status} (nothing live / cleared)",
+                    (int)response.StatusCode);
+                return new SlideStatus(null, null, ConnectionState.Connected, DateTimeOffset.UtcNow);
+            }
+
+            try
+            {
+                var body = await response.Content.ReadFromJsonAsync<ProPresenterSlideResponse>(JsonOptions, ct);
+                return new SlideStatus(
+                    ToSlideInfo(body?.Current),
+                    ToSlideInfo(body?.Next),
+                    ConnectionState.Connected,
+                    DateTimeOffset.UtcNow);
+            }
+            catch (JsonException ex)
+            {
+                // Reachable but the body wasn't valid slide JSON (empty/odd response
+                // when cleared). Still connected — just no content to display.
+                _logger.LogDebug("ProPresenter slide body not parseable (likely cleared): {Message}", ex.Message);
+                return new SlideStatus(null, null, ConnectionState.Connected, DateTimeOffset.UtcNow);
+            }
         }
     }
 
@@ -70,6 +98,9 @@ public sealed class ProPresenterClient : IProPresenterClient
         }
     }
 
+    // A transport-level failure means ProPresenter is genuinely unreachable.
+    // (A bad/empty HTTP body is handled at the call site, not here — that's a
+    // reachable server with nothing to show, not a disconnection.)
     private static bool IsConnectionFailure(Exception ex) =>
-        ex is HttpRequestException or TaskCanceledException or OperationCanceledException or JsonException;
+        ex is HttpRequestException or TaskCanceledException or OperationCanceledException;
 }
