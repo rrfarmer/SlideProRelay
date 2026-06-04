@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/ProSlideRelay.Server/ProSlideRelay.Server.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ProSlideRelay.Tests/ProSlideRelay.Tests.csproj" />
+  </Folder>
 </Solution>
