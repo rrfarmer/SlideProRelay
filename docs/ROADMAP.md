@@ -17,7 +17,7 @@ Build a cross-platform local relay for ProPresenter 7 that runs on the same mach
 
 ## Phase 0: Discovery And Skeleton
 
-Status: started.
+Status: complete.
 
 Goals:
 
@@ -41,6 +41,8 @@ Open questions:
 - Is combined slide text enough, or do we eventually need per-text-box structure?
 
 ## Phase 1: ProPresenter API Client
+
+Status: complete.
 
 Goals:
 
@@ -216,4 +218,4 @@ Then review:
 
 Next likely implementation step:
 
-Build Phase 1 by adding the typed ProPresenter API client and a relay endpoint that returns the current cached slide status.
+Build Phase 2 by adding a background polling service (`SlidePollingService`) that caches the latest slide status in memory, and wire `GET /api/current` to return from the cache rather than hitting ProPresenter on every request.
