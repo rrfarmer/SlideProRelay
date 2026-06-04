@@ -60,8 +60,13 @@ case "$ARCH" in
     *) echo "  ✗ --arch must be one of: arm64, x64, universal"; exit 1 ;;
 esac
 
-SIGN_APP="Developer ID Application: ${TEAM_ID}"
-SIGN_PKG="Developer ID Installer: ${TEAM_ID}"
+# codesign / productbuild match --sign against a unique substring of the
+# certificate's common name (e.g. "Developer ID Application: Your Name (TEAMID)").
+# The cert-type prefix uniquely identifies the right cert on a single-developer
+# machine, with no need to hard-code your name. (TEAM_ID is still used for
+# notarization below.)
+SIGN_APP="Developer ID Application"
+SIGN_PKG="Developer ID Installer"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
