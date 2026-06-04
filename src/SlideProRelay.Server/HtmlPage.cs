@@ -47,6 +47,15 @@ internal static class HtmlPage
               padding: 1rem;
             }
 
+            /* Idle: connected but nothing live (e.g. "Clear All"). Kept dim and
+               understated so the phone stays mostly black for the audience. */
+            #current.idle {
+              font-size: clamp(0.9rem, 2.5vw, 1.25rem);
+              font-weight: 400;
+              color: #555;
+              letter-spacing: 0.04em;
+            }
+
             #next {
               text-align: center;
               font-size: clamp(0.85rem, 2.5vw, 1.25rem);
@@ -74,12 +83,32 @@ internal static class HtmlPage
               es.onmessage = (e) => {
                 const d = JSON.parse(e.data);
                 const connected = d.connection === 'connected';
-                statusEl.textContent = connected
-                  ? (d.current?.text ? '● Live' : '● Live — no slide text')
-                  : '● ProPresenter offline';
-                statusEl.className   = d.connection;
-                currentEl.textContent = d.current?.text ?? '';
-                nextEl.textContent    = d.next?.text ? 'Next: ' + d.next.text : '';
+                const text = d.current?.text;
+
+                if (!connected) {
+                  // ProPresenter unreachable (relay is up, PP is not).
+                  statusEl.textContent = '● ProPresenter offline';
+                  statusEl.className   = 'unavailable';
+                  currentEl.textContent = '';
+                  currentEl.className   = '';
+                  nextEl.textContent    = '';
+                  return;
+                }
+
+                statusEl.className = 'connected';
+                if (text) {
+                  // Something is live.
+                  statusEl.textContent  = '● Live';
+                  currentEl.textContent = text;
+                  currentEl.className   = '';
+                  nextEl.textContent    = d.next?.text ? 'Next: ' + d.next.text : '';
+                } else {
+                  // Connected but nothing on screen (e.g. "Clear All") — idle, not offline.
+                  statusEl.textContent  = '● Live';
+                  currentEl.textContent = 'Nothing on screen';
+                  currentEl.className   = 'idle';
+                  nextEl.textContent    = '';
+                }
               };
 
               es.onerror = () => {
