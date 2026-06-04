@@ -4,6 +4,8 @@ using ProSlideRelay.Server.ProPresenter;
 using ProSlideRelay.Server.ProPresenter.Models;
 using ProSlideRelay.Server.Startup;
 
+var camelCaseJson = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<ProPresenterOptions>(
@@ -80,9 +82,9 @@ app.MapGet("/events", async (SlideCache cache, HttpContext ctx) =>
     catch (OperationCanceledException) { }
 });
 
-static async Task WriteSseEvent(HttpResponse response, SlideStatus status, CancellationToken ct)
+async Task WriteSseEvent(HttpResponse response, SlideStatus status, CancellationToken ct)
 {
-    var json = JsonSerializer.Serialize(SlidePayload(status));
+    var json = JsonSerializer.Serialize(SlidePayload(status), camelCaseJson);
     var line = $"data: {json}\n\n";
     await response.WriteAsync(line, ct);
     await response.Body.FlushAsync(ct);
