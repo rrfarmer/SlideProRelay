@@ -481,7 +481,7 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 
-# ProSlideRelay build output
+# SlideProRelay build output
 installer/output/
 installer-mac/output/
 

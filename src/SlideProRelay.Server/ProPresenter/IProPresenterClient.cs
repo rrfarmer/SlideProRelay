@@ -1,0 +1,10 @@
+using SlideProRelay.Server.ProPresenter.Models;
+
+namespace SlideProRelay.Server.ProPresenter;
+
+public interface IProPresenterClient
+{
+    Task<string?> GetVersionAsync(CancellationToken ct = default);
+    Task<SlideStatus> GetCurrentSlideAsync(CancellationToken ct = default);
+    Task<string> GetRawSlideJsonAsync(CancellationToken ct = default);
+}

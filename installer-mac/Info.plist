@@ -3,16 +3,16 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.prosliderlay.app</string>
+    <string>io.slidepro.relay</string>
 
     <key>CFBundleName</key>
-    <string>ProSlideRelay</string>
+    <string>SlideProRelay</string>
 
     <key>CFBundleDisplayName</key>
-    <string>ProSlideRelay</string>
+    <string>SlideProRelay</string>
 
     <key>CFBundleExecutable</key>
-    <string>ProSlideRelay</string>
+    <string>SlideProRelay</string>
 
     <key>CFBundlePackageType</key>
     <string>APPL</string>

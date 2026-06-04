@@ -1,6 +1,6 @@
-# ProSlideRelay
+# SlideProRelay
 
-ProSlideRelay runs on the same computer as ProPresenter 7. It reads the current slide text and shares it with phones or other devices on your local network — no extra hardware required.
+SlideProRelay runs on the same computer as ProPresenter 7. It reads the current slide text and shares it with phones or other devices on your local network — no extra hardware required.
 
 ## What it does
 
@@ -26,19 +26,19 @@ ProSlideRelay runs on the same computer as ProPresenter 7. It reads the current 
 Windows (PowerShell):
 
 ```powershell
-dotnet run --project src\ProSlideRelay.Server\ProSlideRelay.Server.csproj
+dotnet run --project src\SlideProRelay.Server\SlideProRelay.Server.csproj
 ```
 
 macOS / Linux (bash):
 
 ```bash
-dotnet run --project src/ProSlideRelay.Server/ProSlideRelay.Server.csproj
+dotnet run --project src/SlideProRelay.Server/SlideProRelay.Server.csproj
 ```
 
 When it starts, you will see something like:
 
 ```
-  ProSlideRelay is running
+  SlideProRelay is running
 
   Local:   http://localhost:5174
   Network: http://192.168.1.42:5174
@@ -52,7 +52,7 @@ Press `Ctrl+C` to stop.
 
 ## Configuration
 
-Edit `src/ProSlideRelay.Server/appsettings.json` to change settings:
+Edit `src/SlideProRelay.Server/appsettings.json` to change settings:
 
 ```json
 "ProPresenter": {
@@ -67,12 +67,12 @@ You can also override any setting with an environment variable:
 ```powershell
 # Windows (PowerShell)
 $env:ProPresenter__Port = "50002"
-dotnet run --project src\ProSlideRelay.Server\ProSlideRelay.Server.csproj
+dotnet run --project src\SlideProRelay.Server\SlideProRelay.Server.csproj
 ```
 
 ```bash
 # macOS / Linux (bash)
-ProPresenter__Port=50002 dotnet run --project src/ProSlideRelay.Server/ProSlideRelay.Server.csproj
+ProPresenter__Port=50002 dotnet run --project src/SlideProRelay.Server/SlideProRelay.Server.csproj
 ```
 
 ## API
@@ -99,17 +99,17 @@ The tray app runs as a system tray icon — no console window. The installer add
 .\installer\build.ps1 -Version 1.2.0
 ```
 
-The installer is written to `installer\output\ProSlideRelay-1.0.0-Setup.exe`.
+The installer is written to `installer\output\SlideProRelay-1.0.0-Setup.exe`.
 
 **What the installer does:**
-- Installs to `Program Files\ProSlideRelay`
+- Installs to `Program Files\SlideProRelay`
 - Adds a Start Menu shortcut
 - Optional: desktop shortcut
 - Optional: start automatically when Windows starts
 - Adds a Windows Firewall rule so phones on your network can connect
 - Registers a proper uninstaller (via Add/Remove Programs)
 
-Settings are saved to `%APPDATA%\ProSlideRelay\settings.json` so they survive reinstalls and updates.
+Settings are saved to `%APPDATA%\SlideProRelay\settings.json` so they survive reinstalls and updates.
 
 ## macOS app (menu bar)
 
@@ -136,7 +136,7 @@ chmod +x installer-mac/build.sh
 By default this produces a **universal** binary (Apple Silicon + Intel). To build only
 for your own machine — faster — pass `--arch arm64` (Apple Silicon) or `--arch x64` (Intel).
 
-Output: `installer-mac/output/ProSlideRelay-1.0.0.pkg`
+Output: `installer-mac/output/SlideProRelay-1.0.0.pkg`
 
 Install it by double-clicking the `.pkg` (the app lands in `/Applications`). Because the
 build is unsigned, macOS Gatekeeper will warn on first open — **right-click the `.pkg` →
@@ -159,20 +159,20 @@ The output installer is fully signed and notarized — no Gatekeeper warnings on
 
 ```bash
 dotnet test
-dotnet run --project src/ProSlideRelay.Server/ProSlideRelay.Server.csproj
+dotnet run --project src/SlideProRelay.Server/SlideProRelay.Server.csproj
 ```
 
 **Note on building the whole solution:** a plain `dotnet build` at the repo root
-builds every project, including `ProSlideRelay.Tray` (Windows Forms) — that project
+builds every project, including `SlideProRelay.Tray` (Windows Forms) — that project
 only builds on Windows. On macOS, build the projects you need individually:
 
 ```bash
 # Console server (the core; used by both the Windows and macOS apps)
-dotnet build src/ProSlideRelay.Server/ProSlideRelay.Server.csproj
+dotnet build src/SlideProRelay.Server/SlideProRelay.Server.csproj
 
 # Menu bar app — a macOS .app bundle is self-contained, so it must be
 # published (with a runtime identifier), not plain-built:
-dotnet publish src/ProSlideRelay.Mac/ProSlideRelay.Mac.csproj -c Release -r osx-arm64
+dotnet publish src/SlideProRelay.Mac/SlideProRelay.Mac.csproj -c Release -r osx-arm64
 ```
 
 For a packaged `.app` + `.pkg`, use `installer-mac/build.sh` (see the macOS section above).

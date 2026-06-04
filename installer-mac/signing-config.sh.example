@@ -1,4 +1,4 @@
-# ProSlideRelay macOS signing configuration
+# SlideProRelay macOS signing configuration
 #
 # Copy this file to signing-config.sh and fill in your values.
 # signing-config.sh is gitignored — never commit it.

@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SlideProRelay.Mac/SlideProRelay.Mac.csproj" />
+    <Project Path="src/SlideProRelay.Server/SlideProRelay.Server.csproj" />
+    <Project Path="src/SlideProRelay.Tray/SlideProRelay.Tray.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SlideProRelay.Tests/SlideProRelay.Tests.csproj" />
+  </Folder>
+</Solution>

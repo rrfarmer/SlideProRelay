@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Builds the ProSlideRelay Windows installer.
+    Builds the SlideProRelay Windows installer.
 
 .PARAMETER Version
     Version number to embed (e.g. 1.0.0). Defaults to 1.0.0.
@@ -17,7 +17,7 @@ param(
 $ErrorActionPreference = "Stop"
 $Root     = Split-Path $PSScriptRoot -Parent
 $Publish  = "$Root\publish\windows"
-$IssFile  = "$PSScriptRoot\ProSlideRelay.iss"
+$IssFile  = "$PSScriptRoot\SlideProRelay.iss"
 
 # ── Find Inno Setup ───────────────────────────────────────────────────────────
 
@@ -39,9 +39,9 @@ if (-not $InnoSetup) {
 # ── Publish self-contained EXE ────────────────────────────────────────────────
 
 Write-Host ""
-Write-Host "  Building ProSlideRelay $Version..." -ForegroundColor Cyan
+Write-Host "  Building SlideProRelay $Version..." -ForegroundColor Cyan
 
-dotnet publish "$Root\src\ProSlideRelay.Tray\ProSlideRelay.Tray.csproj" `
+dotnet publish "$Root\src\SlideProRelay.Tray\SlideProRelay.Tray.csproj" `
     -r win-x64 `
     -c Release `
     -p:PublishSingleFile=true `
@@ -69,7 +69,7 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-$Installer = "$PSScriptRoot\output\ProSlideRelay-$Version-Setup.exe"
+$Installer = "$PSScriptRoot\output\SlideProRelay-$Version-Setup.exe"
 Write-Host ""
 Write-Host "  Done! Installer ready:" -ForegroundColor Green
 Write-Host "  $Installer" -ForegroundColor White

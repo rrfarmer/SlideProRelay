@@ -1,4 +1,4 @@
-# ProSlideRelay Roadmap
+# SlideProRelay Roadmap
 
 ## Project Purpose
 
@@ -220,7 +220,7 @@ Then review:
 
 - `README.md`
 - `docs/ROADMAP.md`
-- `src/ProSlideRelay.Server/Program.cs`
+- `src/SlideProRelay.Server/Program.cs`
 
 Next likely implementation step:
 

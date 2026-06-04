@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
 
-    <title>ProSlideRelay</title>
+    <title>SlideProRelay</title>
     <welcome    file="welcome.html"    mime-type="text/html"/>
     <conclusion file="conclusion.html" mime-type="text/html"/>
 
@@ -11,22 +11,22 @@
         rootVolumeOnly="false"
         allow-external-scripts="false"/>
 
-    <pkg-ref id="com.prosliderlay.app"/>
+    <pkg-ref id="io.slidepro.relay"/>
 
     <choices-outline>
         <line choice="default">
-            <line choice="com.prosliderlay.app"/>
+            <line choice="io.slidepro.relay"/>
         </line>
     </choices-outline>
 
     <choice id="default"/>
-    <choice id="com.prosliderlay.app" visible="false">
-        <pkg-ref id="com.prosliderlay.app"/>
+    <choice id="io.slidepro.relay" visible="false">
+        <pkg-ref id="io.slidepro.relay"/>
     </choice>
 
     <pkg-ref
-        id="com.prosliderlay.app"
+        id="io.slidepro.relay"
         version="$(PRODUCT_VERSION)"
-        onConclusion="none">ProSlideRelay-component.pkg</pkg-ref>
+        onConclusion="none">SlideProRelay-component.pkg</pkg-ref>
 
 </installer-gui-script>

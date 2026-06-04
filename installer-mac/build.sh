@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ProSlideRelay macOS build script
+# SlideProRelay macOS build script
 #
 # UNSIGNED (anyone — for local development/testing):
 #   ./installer-mac/build.sh --skip-signing
@@ -20,9 +20,9 @@ set -euo pipefail
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
-BUNDLE_ID="com.prosliderlay.app"
-APP_NAME="ProSlideRelay"
-EXECUTABLE="ProSlideRelay"          # Must match AssemblyName in .csproj
+BUNDLE_ID="io.slidepro.relay"
+APP_NAME="SlideProRelay"
+EXECUTABLE="SlideProRelay"          # Must match AssemblyName in .csproj
 TFM_DIR="net10.0-macos"             # Must match TargetFramework in .csproj
 
 VERSION="1.0.0"
@@ -70,8 +70,8 @@ SIGN_PKG="Developer ID Installer"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-PROJECT="${REPO_ROOT}/src/ProSlideRelay.Mac/ProSlideRelay.Mac.csproj"
-BIN_BASE="${REPO_ROOT}/src/ProSlideRelay.Mac/bin/Release/${TFM_DIR}"
+PROJECT="${REPO_ROOT}/src/SlideProRelay.Mac/SlideProRelay.Mac.csproj"
+BIN_BASE="${REPO_ROOT}/src/SlideProRelay.Mac/bin/Release/${TFM_DIR}"
 OUT_DIR="${REPO_ROOT}/publish/mac"
 APP_BUNDLE="${OUT_DIR}/${APP_NAME}.app"
 OUTPUT_DIR="${SCRIPT_DIR}/output"
@@ -79,7 +79,7 @@ OUTPUT_DIR="${SCRIPT_DIR}/output"
 # ── Preflight checks ──────────────────────────────────────────────────────────
 
 echo ""
-echo "  ProSlideRelay macOS build — v${VERSION} (${ARCH})"
+echo "  SlideProRelay macOS build — v${VERSION} (${ARCH})"
 if [[ "$SKIP_SIGNING" == true ]]; then
     echo "  Mode: UNSIGNED (local use only)"
 else
@@ -217,11 +217,20 @@ rm -rf "$PKG_ROOT"
 mkdir -p "${PKG_ROOT}/Applications"
 cp -R "$APP_BUNDLE" "${PKG_ROOT}/Applications/"
 
-COMPONENT_PKG="${OUTPUT_DIR}/ProSlideRelay-component.pkg"
+COMPONENT_PKG="${OUTPUT_DIR}/SlideProRelay-component.pkg"
 FINAL_PKG="${OUTPUT_DIR}/${APP_NAME}-${VERSION}.pkg"
+
+# By default pkgbuild marks app bundles as relocatable, so if macOS already
+# knows about a copy of the app (e.g. one you launched from the build folder),
+# the installer overwrites THAT copy instead of installing to /Applications.
+# Disable relocation so it always installs to /Applications.
+COMPONENT_PLIST="${OUT_DIR}/component.plist"
+pkgbuild --analyze --root "$PKG_ROOT" "$COMPONENT_PLIST" >/dev/null
+/usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$COMPONENT_PLIST"
 
 pkgbuild \
     --root              "$PKG_ROOT" \
+    --component-plist   "$COMPONENT_PLIST" \
     --identifier        "$BUNDLE_ID" \
     --version           "$VERSION" \
     --install-location  "/" \
