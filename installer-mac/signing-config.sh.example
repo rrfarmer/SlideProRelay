@@ -1,0 +1,16 @@
+# ProSlideRelay macOS signing configuration
+#
+# Copy this file to signing-config.sh and fill in your values.
+# signing-config.sh is gitignored — never commit it.
+#
+# Required for signed/notarized release builds only.
+# Unsigned local builds (--skip-signing) do not need this file.
+#
+# How to get these values:
+#   TEAM_ID    — developer.apple.com → Account → Membership Details
+#   APPLE_ID   — your Apple ID email address
+#   APP_PASSWORD — appleid.apple.com → Security → App-Specific Passwords
+
+TEAM_ID="YOUR_TEAM_ID"
+APPLE_ID="you@example.com"
+APP_PASSWORD="xxxx-xxxx-xxxx-xxxx"

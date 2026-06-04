@@ -97,6 +97,39 @@ The installer is written to `installer\output\ProSlideRelay-1.0.0-Setup.exe`.
 
 Settings are saved to `%APPDATA%\ProSlideRelay\settings.json` so they survive reinstalls and updates.
 
+## macOS app (menu bar)
+
+The macOS app lives in the menu bar as a **P7** icon — no Dock icon. Click it to open the browser, adjust settings, or enable "Start at Login".
+
+**Prerequisites (one-time, on your Mac):**
+
+```bash
+xcode-select --install               # Xcode Command Line Tools
+dotnet workload install macos        # .NET macOS AppKit bindings
+```
+
+**Unsigned build (anyone — for local use/testing):**
+
+```bash
+chmod +x installer-mac/build.sh
+./installer-mac/build.sh --skip-signing
+```
+
+Output: `installer-mac/output/ProSlideRelay-1.0.0.pkg`
+macOS will warn about the unsigned installer on other Macs (right-click → Open to bypass).
+
+**Signed + notarized build (maintainer release):**
+
+```bash
+./installer-mac/build.sh \
+  --team-id   YOUR_TEAM_ID \
+  --apple-id  you@example.com \
+  --password  xxxx-xxxx-xxxx-xxxx
+```
+
+Requires an [Apple Developer account](https://developer.apple.com) ($99/year), Developer ID certificates installed in Keychain, and an [app-specific password](https://appleid.apple.com).
+The output installer is fully signed and notarized — no Gatekeeper warnings on any Mac.
+
 ## Development
 
 ```powershell

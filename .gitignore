@@ -483,3 +483,7 @@ $RECYCLE.BIN/
 
 # ProSlideRelay build output
 installer/output/
+installer-mac/output/
+
+# Local signing credentials — never commit
+installer-mac/signing-config.sh

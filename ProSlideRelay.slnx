@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/ProSlideRelay.Mac/ProSlideRelay.Mac.csproj" />
     <Project Path="src/ProSlideRelay.Server/ProSlideRelay.Server.csproj" />
     <Project Path="src/ProSlideRelay.Tray/ProSlideRelay.Tray.csproj" />
   </Folder>
