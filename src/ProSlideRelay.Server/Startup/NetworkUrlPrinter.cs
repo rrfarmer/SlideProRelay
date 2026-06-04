@@ -33,6 +33,8 @@ public static class NetworkUrlPrinter
         logger.LogInformation("─────────────────────────────────────────");
     }
 
+    public static string? GetLanIp() => GetLanAddresses().FirstOrDefault();
+
     private static IReadOnlyList<string> GetLanAddresses()
     {
         var results = new List<string>();
