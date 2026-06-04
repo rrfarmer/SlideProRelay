@@ -5,6 +5,9 @@ namespace ProSlideRelay.Server.ProPresenter;
 
 public sealed class SlidePollingService : BackgroundService
 {
+    // Backoff caps at 30 s so a long outage doesn't go completely silent
+    private static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(30);
+
     private readonly IProPresenterClient _client;
     private readonly SlideCache _cache;
     private readonly IOptionsMonitor<ProPresenterOptions> _opts;
@@ -26,7 +29,8 @@ public sealed class SlidePollingService : BackgroundService
     {
         _logger.LogInformation("Slide polling started");
 
-        ConnectionState? lastReported = null;
+        ConnectionState? lastState = null;
+        int consecutiveFailures = 0;
 
         while (!ct.IsCancellationRequested)
         {
@@ -35,25 +39,51 @@ public sealed class SlidePollingService : BackgroundService
                 var status = await _client.GetCurrentSlideAsync(ct);
                 _cache.Update(status);
 
-                if (status.Connection != lastReported)
+                if (status.Connection == ConnectionState.Connected)
                 {
-                    if (status.Connection == ConnectionState.Connected)
+                    if (lastState != ConnectionState.Connected)
                         _logger.LogInformation("Connected to ProPresenter");
-                    else
-                        _logger.LogWarning("ProPresenter unavailable — waiting to reconnect");
 
-                    lastReported = status.Connection;
+                    consecutiveFailures = 0;
                 }
+                else
+                {
+                    consecutiveFailures++;
+                    LogUnavailable(consecutiveFailures);
+                }
+
+                lastState = status.Connection;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogError(ex, "Unexpected error in slide polling");
+                consecutiveFailures++;
+                _logger.LogError(ex, "Unexpected error in slide polling (failure #{Count})", consecutiveFailures);
             }
 
-            var interval = _opts.CurrentValue.PollingIntervalMs;
-            await Task.Delay(interval, ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            var delay = CalculateDelay(consecutiveFailures, _opts.CurrentValue.PollingIntervalMs);
+            await Task.Delay(delay, ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         }
 
         _logger.LogInformation("Slide polling stopped");
+    }
+
+    private void LogUnavailable(int consecutiveFailures)
+    {
+        // Log on 1st failure, then only every ~10 attempts to avoid spam
+        if (consecutiveFailures == 1)
+            _logger.LogWarning("ProPresenter unavailable — retrying with backoff");
+        else if (consecutiveFailures % 10 == 0)
+            _logger.LogDebug("ProPresenter still unavailable (attempt {Count})", consecutiveFailures);
+    }
+
+    private static TimeSpan CalculateDelay(int failures, int baseIntervalMs)
+    {
+        if (failures <= 1)
+            return TimeSpan.FromMilliseconds(baseIntervalMs);
+
+        // Double the interval for each failure, up to MaxBackoff
+        var backoffMs = baseIntervalMs * Math.Pow(2, failures - 1);
+        var capped = Math.Min(backoffMs, MaxBackoff.TotalMilliseconds);
+        return TimeSpan.FromMilliseconds(capped);
     }
 }

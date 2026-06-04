@@ -75,15 +75,32 @@ public sealed class SlidePollingServiceTests
         var service = new SlidePollingService(
             client, cache, BuildOptions(), NullLogger<SlidePollingService>.Instance);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
         await service.StartAsync(cts.Token);
-        await Task.Delay(150, CancellationToken.None);
+        await Task.Delay(100, CancellationToken.None);
         await cts.CancelAsync();
 
         // Should complete without throwing
         await service.StopAsync(CancellationToken.None);
 
         Assert.Equal(ConnectionState.Unavailable, cache.Latest?.Connection);
+    }
+
+    [Theory]
+    [InlineData(0, 500,   500)]   // no failures → base interval
+    [InlineData(1, 500,   500)]   // first failure → base interval
+    [InlineData(2, 500,  1000)]   // second failure → 2x
+    [InlineData(3, 500,  2000)]   // third failure → 4x
+    [InlineData(4, 500,  4000)]   // fourth failure → 8x
+    [InlineData(10, 500, 30000)]  // many failures → capped at 30 s
+    public void CalculateDelay_ReturnsExpectedBackoff(int failures, int baseMs, int expectedMs)
+    {
+        var method = typeof(SlidePollingService)
+            .GetMethod("CalculateDelay", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+
+        var result = (TimeSpan)method.Invoke(null, [failures, baseMs])!;
+
+        Assert.Equal(TimeSpan.FromMilliseconds(expectedMs), result);
     }
 
     // --- Test doubles ---
