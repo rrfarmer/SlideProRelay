@@ -66,6 +66,8 @@ Acceptance criteria:
 
 ## Phase 2: Fast Lyrics Relay
 
+Status: complete.
+
 Goals:
 
 - Add a background polling service.
@@ -86,6 +88,8 @@ Acceptance criteria:
 - Relay keeps working if ProPresenter temporarily disappears and returns.
 
 ## Phase 3: Live Browser Feed
+
+Status: complete.
 
 Goals:
 
@@ -109,6 +113,8 @@ Acceptance criteria:
 - The page shows connection state when ProPresenter or the relay feed is unavailable.
 
 ## Phase 4: Configuration And Packaging
+
+Status: partially complete. LAN URL discovery, default port, env var overrides, and ProPresenter setup docs are done. Windows service / macOS launch agent packaging is deferred to a later iteration.
 
 Goals:
 
@@ -218,4 +224,4 @@ Then review:
 
 Next likely implementation step:
 
-Build Phase 2 by adding a background polling service (`SlidePollingService`) that caches the latest slide status in memory, and wire `GET /api/current` to return from the cache rather than hitting ProPresenter on every request.
+Build Phase 5 by hardening reliability: add exponential backoff when ProPresenter is unreachable, avoid log spam during outages, and keep the last-known slide visible on the browser page when the relay temporarily loses the ProPresenter connection.
