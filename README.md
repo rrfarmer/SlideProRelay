@@ -70,7 +70,8 @@ ProPresenter's own preferences — so you normally never set `Port` at all. The
 relay also re-checks on connection loss, so if ProPresenter restarts on a new
 port it reconnects on its own. `Port` is used only as a fallback (detection off,
 a remote `Host`, or detection unavailable). Auto-detection is implemented on
-macOS today; on Windows it falls back to the configured `Port` for now.
+macOS (reads `com.renewedvision.propresenter` preferences) and Windows (reads
+`%APPDATA%\RenewedVision\ProPresenter\Preferences\NetworkPreferences.proPref`).
 
 You can also override any setting with an environment variable:
 
