@@ -1,5 +1,5 @@
 ; ProSlideRelay Installer
-; Requires Inno Setup 6 — https://jrsoftware.org/isdl.php
+; Requires Inno Setup 6 or 7 — https://jrsoftware.org/isdl.php
 ;
 ; Build via:  installer\build.ps1
 ; Or manually: ISCC.exe /DAppVersion=1.0.0 installer\ProSlideRelay.iss

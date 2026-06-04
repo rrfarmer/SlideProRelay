@@ -22,13 +22,15 @@ $IssFile  = "$PSScriptRoot\ProSlideRelay.iss"
 # ── Find Inno Setup ───────────────────────────────────────────────────────────
 
 $InnoSetup = @(
+    "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
+    "${env:ProgramFiles}\Inno Setup 7\ISCC.exe",
     "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
     "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
 if (-not $InnoSetup) {
     Write-Host ""
-    Write-Host "  Inno Setup 6 not found." -ForegroundColor Red
+    Write-Host "  Inno Setup not found." -ForegroundColor Red
     Write-Host "  Download and install it from: https://jrsoftware.org/isdl.php" -ForegroundColor Yellow
     Write-Host ""
     exit 1
