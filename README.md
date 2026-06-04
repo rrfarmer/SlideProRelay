@@ -70,6 +70,24 @@ dotnet run --project src\ProSlideRelay.Server\ProSlideRelay.Server.csproj
 | `GET /api/current` | Current slide as JSON |
 | `GET /api/health` | Returns `ok` if the relay is running |
 
+## Windows app (tray icon)
+
+The tray app runs as a system tray icon — no console window. Double-click the tray icon to open the status and settings window.
+
+**Build a single EXE:**
+
+```powershell
+dotnet publish src\ProSlideRelay.Tray\ProSlideRelay.Tray.csproj `
+  -r win-x64 -c Release `
+  -p:PublishSingleFile=true `
+  --self-contained true `
+  -o publish\windows
+```
+
+The output in `publish\windows\` is one file: `ProSlideRelay.Tray.exe`. Copy it anywhere and run it — no installer or .NET runtime needed on the target machine.
+
+Settings are saved to `%APPDATA%\ProSlideRelay\settings.json` so they survive updates.
+
 ## Development
 
 ```powershell
