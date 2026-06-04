@@ -11,11 +11,13 @@ public sealed class ProPresenterClient : IProPresenterClient
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly HttpClient _http;
+    private readonly ProPresenterEndpoint _endpoint;
     private readonly ILogger<ProPresenterClient> _logger;
 
-    public ProPresenterClient(HttpClient http, ILogger<ProPresenterClient> logger)
+    public ProPresenterClient(HttpClient http, ProPresenterEndpoint endpoint, ILogger<ProPresenterClient> logger)
     {
         _http = http;
+        _endpoint = endpoint;
         _logger = logger;
     }
 
@@ -23,7 +25,7 @@ public sealed class ProPresenterClient : IProPresenterClient
     {
         try
         {
-            var doc = await _http.GetFromJsonAsync<JsonDocument>("/version", JsonOptions, ct);
+            var doc = await _http.GetFromJsonAsync<JsonDocument>(_endpoint.Url("/version"), JsonOptions, ct);
             return doc?.RootElement.GetProperty("name").GetString();
         }
         catch (Exception ex) when (IsConnectionFailure(ex))
@@ -38,12 +40,15 @@ public sealed class ProPresenterClient : IProPresenterClient
         HttpResponseMessage response;
         try
         {
-            response = await _http.GetAsync("/v1/status/slide", ct);
+            response = await _http.GetAsync(_endpoint.Url("/v1/status/slide"), ct);
         }
         catch (Exception ex) when (IsConnectionFailure(ex))
         {
             // Genuine transport failure (refused, timeout, DNS) — ProPresenter is unreachable.
+            // Re-resolve the endpoint in case ProPresenter restarted on a new port,
+            // so the next poll self-heals onto the new port.
             _logger.LogDebug("ProPresenter unreachable: {Message}", ex.Message);
+            _endpoint.Refresh();
             return new SlideStatus(null, null, ConnectionState.Unavailable, DateTimeOffset.UtcNow);
         }
 
@@ -87,7 +92,7 @@ public sealed class ProPresenterClient : IProPresenterClient
             // 1. Find where we are: the active presentation's uuid + current cue index.
             //    (ProPresenter has no slide-uuid → image endpoint; thumbnails are keyed
             //     by presentation uuid + cue index.)
-            using var idxResp = await _http.GetAsync("/v1/presentation/slide_index", ct);
+            using var idxResp = await _http.GetAsync(_endpoint.Url("/v1/presentation/slide_index"), ct);
             if (!idxResp.IsSuccessStatusCode)
                 return null;
 
@@ -111,7 +116,7 @@ public sealed class ProPresenterClient : IProPresenterClient
 
             // 2. Fetch the thumbnail at the requested quality (pixels, longest edge).
             using var imgReq = new HttpRequestMessage(
-                HttpMethod.Get, $"/v1/presentation/{uuid}/thumbnail/{index}?quality={quality}");
+                HttpMethod.Get, _endpoint.Url($"/v1/presentation/{uuid}/thumbnail/{index}?quality={quality}"));
             imgReq.Headers.Accept.ParseAdd("image/jpeg");
             using var imgResp = await _http.SendAsync(imgReq, ct);
             if (!imgResp.IsSuccessStatusCode)
@@ -137,7 +142,7 @@ public sealed class ProPresenterClient : IProPresenterClient
     {
         try
         {
-            return await _http.GetStringAsync("/v1/status/slide", ct);
+            return await _http.GetStringAsync(_endpoint.Url("/v1/status/slide"), ct);
         }
         catch (Exception ex) when (IsConnectionFailure(ex))
         {

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using SlideProRelay.Server.ProPresenter;
 using SlideProRelay.Server.ProPresenter.Models;
 
@@ -8,8 +9,11 @@ public sealed class ProPresenterClientTests
 {
     private static ProPresenterClient BuildClient(HttpMessageHandler handler)
     {
-        var http = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:50001") };
-        return new ProPresenterClient(http, NullLogger<ProPresenterClient>.Instance);
+        var http = new HttpClient(handler);
+        var options = Options.Create(new ProPresenterOptions { Host = "localhost", Port = 50001 });
+        var endpoint = new ProPresenterEndpoint(
+            options, new NullProPresenterPortDetector(), NullLogger<ProPresenterEndpoint>.Instance);
+        return new ProPresenterClient(http, endpoint, NullLogger<ProPresenterClient>.Instance);
     }
 
     [Fact]

@@ -32,10 +32,20 @@ public static class ServerHost
         builder.Services.Configure<ProPresenterOptions>(
             builder.Configuration.GetSection(ProPresenterOptions.SectionName));
 
-        builder.Services.AddHttpClient<IProPresenterClient, ProPresenterClient>((sp, client) =>
+        // Port auto-detection (reads ProPresenter's own persisted port). The base
+        // URI is resolved dynamically per request via ProPresenterEndpoint, so the
+        // relay follows ProPresenter's shifting port without a fixed BaseAddress.
+        builder.Services.AddSingleton<IProPresenterPortDetector>(sp =>
+            OperatingSystem.IsMacOS()
+                ? new MacProPresenterPortDetector(sp.GetRequiredService<ILogger<MacProPresenterPortDetector>>())
+                : OperatingSystem.IsWindows()
+                    ? new WindowsProPresenterPortDetector(sp.GetRequiredService<ILogger<WindowsProPresenterPortDetector>>())
+                    : new NullProPresenterPortDetector());
+
+        builder.Services.AddSingleton<ProPresenterEndpoint>();
+
+        builder.Services.AddHttpClient<IProPresenterClient, ProPresenterClient>(client =>
         {
-            var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ProPresenterOptions>>().Value;
-            client.BaseAddress = new Uri($"http://{opts.Host}:{opts.Port}");
             client.Timeout = TimeSpan.FromSeconds(3);
         });
 

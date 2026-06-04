@@ -58,9 +58,19 @@ Edit `src/SlideProRelay.Server/appsettings.json` to change settings:
 "ProPresenter": {
   "Host": "localhost",
   "Port": 50001,
-  "PollingIntervalMs": 500
+  "PollingIntervalMs": 500,
+  "AutoDetectPort": true
 }
 ```
+
+**Port auto-detection:** ProPresenter assigns its network/API port automatically
+and it can change between launches. When `AutoDetectPort` is `true` (the default)
+and `Host` is local, SlideProRelay reads the current port straight from
+ProPresenter's own preferences — so you normally never set `Port` at all. The
+relay also re-checks on connection loss, so if ProPresenter restarts on a new
+port it reconnects on its own. `Port` is used only as a fallback (detection off,
+a remote `Host`, or detection unavailable). Auto-detection is implemented on
+macOS today; on Windows it falls back to the configured `Port` for now.
 
 You can also override any setting with an environment variable:
 

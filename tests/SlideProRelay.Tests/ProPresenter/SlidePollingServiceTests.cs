@@ -119,6 +119,9 @@ public sealed class SlidePollingServiceTests
         public Task<string> GetRawSlideJsonAsync(CancellationToken ct = default) =>
             Task.FromResult("{}");
 
+        public Task<byte[]?> GetCurrentSlideImageAsync(int quality, CancellationToken ct = default) =>
+            Task.FromResult<byte[]?>(null);
+
         public Task<SlideStatus> GetCurrentSlideAsync(CancellationToken ct = default)
         {
             if (_queue is { Count: > 0 })
