@@ -56,6 +56,15 @@ internal static class HtmlPage
               letter-spacing: 0.04em;
             }
 
+            /* EXPERIMENTAL: current-slide image (e.g. an image slide with no text). */
+            #slide {
+              flex: 1;
+              min-height: 0;
+              width: 100%;
+              object-fit: contain;
+              display: none;
+            }
+
             #next {
               text-align: center;
               font-size: clamp(0.85rem, 2.5vw, 1.25rem);
@@ -70,12 +79,36 @@ internal static class HtmlPage
         <body>
           <div id="status">Connecting…</div>
           <div id="current"></div>
+          <img id="slide" alt="">
           <div id="next"></div>
 
           <script>
             const statusEl  = document.getElementById('status');
             const currentEl = document.getElementById('current');
+            const slideEl   = document.getElementById('slide');
             const nextEl    = document.getElementById('next');
+
+            function hideImage() {
+              slideEl.style.display = 'none';
+              slideEl.dataset.key = '';
+            }
+
+            function showIdle() {
+              hideImage();
+              currentEl.style.display = 'flex';
+              currentEl.className     = 'idle';
+              currentEl.textContent   = 'Nothing on screen';
+            }
+
+            // EXPERIMENTAL: try to show the current slide image; fall back to idle.
+            // Re-fetch only when the slide identity (key) changes — not every poll.
+            function showSlideImage(key) {
+              if (slideEl.dataset.key === key) return;
+              slideEl.dataset.key = key;
+              slideEl.onload  = () => { currentEl.style.display = 'none'; slideEl.style.display = 'block'; };
+              slideEl.onerror = () => showIdle();
+              slideEl.src = '/api/slide-image?cb=' + encodeURIComponent(key);
+            }
 
             function connect() {
               const es = new EventSource('/events');
@@ -87,8 +120,10 @@ internal static class HtmlPage
 
                 if (!connected) {
                   // ProPresenter unreachable (relay is up, PP is not).
+                  hideImage();
                   statusEl.textContent = '● ProPresenter offline';
                   statusEl.className   = 'unavailable';
+                  currentEl.style.display = 'flex';
                   currentEl.textContent = '';
                   currentEl.className   = '';
                   nextEl.textContent    = '';
@@ -97,21 +132,30 @@ internal static class HtmlPage
 
                 statusEl.className = 'connected';
                 if (text) {
-                  // Something is live.
+                  // Something with text is live.
+                  hideImage();
                   statusEl.textContent  = '● Live';
+                  currentEl.style.display = 'flex';
                   currentEl.textContent = text;
                   currentEl.className   = '';
                   nextEl.textContent    = d.next?.text ? 'Next: ' + d.next.text : '';
+                } else if (d.current) {
+                  // A slide is live but has no text — likely an image slide.
+                  // EXPERIMENTAL: show its thumbnail (falls back to idle on failure).
+                  statusEl.textContent = '● Live — image';
+                  nextEl.textContent   = '';
+                  showSlideImage(d.current.uuid || d.updatedAt);
                 } else {
-                  // Connected but nothing on screen (e.g. "Clear All") — idle, not offline.
-                  statusEl.textContent  = '● Live';
-                  currentEl.textContent = 'Nothing on screen';
-                  currentEl.className   = 'idle';
-                  nextEl.textContent    = '';
+                  // Nothing live at all (e.g. "Clear All") — idle, not offline.
+                  statusEl.textContent = '● Live';
+                  nextEl.textContent   = '';
+                  showIdle();
                 }
               };
 
               es.onerror = () => {
+                hideImage();
+                currentEl.style.display = 'flex';
                 statusEl.textContent = 'Reconnecting…';
                 statusEl.className   = 'unavailable';
                 es.close();

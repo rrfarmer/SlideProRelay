@@ -80,6 +80,53 @@ public sealed class ProPresenterClient : IProPresenterClient
         }
     }
 
+    public async Task<byte[]?> GetCurrentSlideImageAsync(int quality, CancellationToken ct = default)
+    {
+        try
+        {
+            // 1. Find where we are: the active presentation's uuid + current cue index.
+            //    (ProPresenter has no slide-uuid → image endpoint; thumbnails are keyed
+            //     by presentation uuid + cue index.)
+            using var idxResp = await _http.GetAsync("/v1/presentation/slide_index", ct);
+            if (!idxResp.IsSuccessStatusCode)
+                return null;
+
+            using var doc = JsonDocument.Parse(await idxResp.Content.ReadAsStringAsync(ct));
+            // ProPresenter 21.x returns this under "presentation_index"; the community
+            // spec calls it "presentation". Accept either for safety.
+            if ((!doc.RootElement.TryGetProperty("presentation_index", out var pres) &&
+                 !doc.RootElement.TryGetProperty("presentation", out pres)) ||
+                pres.ValueKind != JsonValueKind.Object)
+                return null; // nothing active
+
+            if (!pres.TryGetProperty("index", out var indexEl) ||
+                !pres.TryGetProperty("presentation_id", out var pid) ||
+                !pid.TryGetProperty("uuid", out var uuidEl))
+                return null;
+
+            var index = indexEl.GetInt32();
+            var uuid = uuidEl.GetString();
+            if (string.IsNullOrEmpty(uuid) || index < 0)
+                return null;
+
+            // 2. Fetch the thumbnail at the requested quality (pixels, longest edge).
+            using var imgReq = new HttpRequestMessage(
+                HttpMethod.Get, $"/v1/presentation/{uuid}/thumbnail/{index}?quality={quality}");
+            imgReq.Headers.Accept.ParseAdd("image/jpeg");
+            using var imgResp = await _http.SendAsync(imgReq, ct);
+            if (!imgResp.IsSuccessStatusCode)
+                return null;
+
+            var bytes = await imgResp.Content.ReadAsByteArrayAsync(ct);
+            return bytes.Length > 0 ? bytes : null;
+        }
+        catch (Exception ex) when (IsConnectionFailure(ex) || ex is JsonException)
+        {
+            _logger.LogDebug("Slide image unavailable: {Message}", ex.Message);
+            return null;
+        }
+    }
+
     private static SlideInfo? ToSlideInfo(ProPresenterSlideEntry? entry)
     {
         if (entry is null) return null;

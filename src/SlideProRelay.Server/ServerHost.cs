@@ -59,6 +59,18 @@ public static class ServerHost
             return Results.Content(raw, "application/json");
         });
 
+        // EXPERIMENTAL: JPEG thumbnail of the current slide/cue (e.g. an image
+        // slide with no text). quality = pixels on the longest edge (default 1920
+        // ≈ 1080p). 204 when nothing is live or ProPresenter is unreachable.
+        app.MapGet("/api/slide-image", async (IProPresenterClient client, int? quality, CancellationToken ct) =>
+        {
+            var q = quality is > 0 and <= 3840 ? quality.Value : 1920;
+            var bytes = await client.GetCurrentSlideImageAsync(q, ct);
+            return bytes is null
+                ? Results.NoContent()
+                : Results.File(bytes, "image/jpeg");
+        });
+
         app.MapGet("/api/current", (SlideCache cache) =>
         {
             var status = cache.Latest;
