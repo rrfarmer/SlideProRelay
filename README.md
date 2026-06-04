@@ -70,23 +70,32 @@ dotnet run --project src\ProSlideRelay.Server\ProSlideRelay.Server.csproj
 | `GET /api/current` | Current slide as JSON |
 | `GET /api/health` | Returns `ok` if the relay is running |
 
-## Windows app (tray icon)
+## Windows installer
 
-The tray app runs as a system tray icon — no console window. Double-click the tray icon to open the status and settings window.
+The tray app runs as a system tray icon — no console window. The installer adds a Start Menu shortcut, optional desktop shortcut, optional start-with-Windows, and configures the Windows Firewall automatically.
 
-**Build a single EXE:**
+**Prerequisites (one-time):**
+1. Install [Inno Setup 6](https://jrsoftware.org/isdl.php) (free)
+
+**Build the installer:**
 
 ```powershell
-dotnet publish src\ProSlideRelay.Tray\ProSlideRelay.Tray.csproj `
-  -r win-x64 -c Release `
-  -p:PublishSingleFile=true `
-  --self-contained true `
-  -o publish\windows
+.\installer\build.ps1
+# or with a specific version:
+.\installer\build.ps1 -Version 1.2.0
 ```
 
-The output in `publish\windows\` is one file: `ProSlideRelay.Tray.exe`. Copy it anywhere and run it — no installer or .NET runtime needed on the target machine.
+The installer is written to `installer\output\ProSlideRelay-1.0.0-Setup.exe`.
 
-Settings are saved to `%APPDATA%\ProSlideRelay\settings.json` so they survive updates.
+**What the installer does:**
+- Installs to `Program Files\ProSlideRelay`
+- Adds a Start Menu shortcut
+- Optional: desktop shortcut
+- Optional: start automatically when Windows starts
+- Adds a Windows Firewall rule so phones on your network can connect
+- Registers a proper uninstaller (via Add/Remove Programs)
+
+Settings are saved to `%APPDATA%\ProSlideRelay\settings.json` so they survive reinstalls and updates.
 
 ## Development
 
