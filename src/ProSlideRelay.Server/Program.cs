@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using ProSlideRelay.Server.ProPresenter;
 using ProSlideRelay.Server.ProPresenter.Models;
+using ProSlideRelay.Server.Startup;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -171,5 +172,14 @@ static string HtmlPage() => """
     </body>
     </html>
     """;
+
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    var addresses = app.Urls.Count > 0
+        ? app.Urls
+        : ["http://localhost:5174"];
+    NetworkUrlPrinter.Print(logger, addresses);
+});
 
 app.Run();
