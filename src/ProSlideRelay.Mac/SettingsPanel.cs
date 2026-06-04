@@ -27,7 +27,7 @@ public sealed class SettingsPanel : NSPanel
         _onSave = onSave;
 
         Title = "ProSlideRelay";
-        IsFloatingPanel = true;
+        FloatingPanel = true;
         HidesOnDeactivate = false;
         ReleasedWhenClosed = false;
 
@@ -157,7 +157,7 @@ public sealed class SettingsPanel : NSPanel
     private static NSTextField LinkField(string text, CGRect frame)
     {
         var f = TextField(text, frame);
-        f.TextColor = NSColor.LinkColor;
+        f.TextColor = NSColor.Link;
         f.Selectable = true;
         return f;
     }

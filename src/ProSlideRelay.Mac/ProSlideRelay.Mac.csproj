@@ -1,10 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0-macos13.0</TargetFramework>
+    <TargetFramework>net10.0-macos</TargetFramework>
+    <SupportedOSPlatformVersion>13.0</SupportedOSPlatformVersion>
     <OutputType>Exe</OutputType>
     <AssemblyName>ProSlideRelay</AssemblyName>
     <RootNamespace>ProSlideRelay.Mac</RootNamespace>
+    <ApplicationId>com.prosliderlay.app</ApplicationId>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>

@@ -23,8 +23,16 @@ ProSlideRelay runs on the same computer as ProPresenter 7. It reads the current 
 
 ## Running
 
+Windows (PowerShell):
+
 ```powershell
 dotnet run --project src\ProSlideRelay.Server\ProSlideRelay.Server.csproj
+```
+
+macOS / Linux (bash):
+
+```bash
+dotnet run --project src/ProSlideRelay.Server/ProSlideRelay.Server.csproj
 ```
 
 When it starts, you will see something like:
@@ -57,8 +65,14 @@ Edit `src/ProSlideRelay.Server/appsettings.json` to change settings:
 You can also override any setting with an environment variable:
 
 ```powershell
+# Windows (PowerShell)
 $env:ProPresenter__Port = "50002"
 dotnet run --project src\ProSlideRelay.Server\ProSlideRelay.Server.csproj
+```
+
+```bash
+# macOS / Linux (bash)
+ProPresenter__Port=50002 dotnet run --project src/ProSlideRelay.Server/ProSlideRelay.Server.csproj
 ```
 
 ## API
@@ -104,9 +118,13 @@ The macOS app lives in the menu bar as a **P7** icon — no Dock icon. Click it 
 **Prerequisites (one-time, on your Mac):**
 
 ```bash
-xcode-select --install               # Xcode Command Line Tools
+xcode-select --install               # Xcode Command Line Tools (provides lipo, codesign, pkgbuild)
 dotnet workload install macos        # .NET macOS AppKit bindings
 ```
+
+You also need the [.NET 10 **SDK**](https://dotnet.microsoft.com/download/dotnet/10.0)
+(the SDK, not just the runtime) to build. Verify with `dotnet --version` (expects `10.0.x`)
+and `dotnet workload list` (expects `macos` listed).
 
 **Unsigned build (anyone — for local use/testing):**
 
@@ -115,8 +133,15 @@ chmod +x installer-mac/build.sh
 ./installer-mac/build.sh --skip-signing
 ```
 
+By default this produces a **universal** binary (Apple Silicon + Intel). To build only
+for your own machine — faster — pass `--arch arm64` (Apple Silicon) or `--arch x64` (Intel).
+
 Output: `installer-mac/output/ProSlideRelay-1.0.0.pkg`
-macOS will warn about the unsigned installer on other Macs (right-click → Open to bypass).
+
+Install it by double-clicking the `.pkg` (the app lands in `/Applications`). Because the
+build is unsigned, macOS Gatekeeper will warn on first open — **right-click the `.pkg` →
+Open** to bypass. The app then runs as a **P7** menu bar icon with no Dock icon; click it
+for the browser link, settings, and "Start at Login".
 
 **Signed + notarized build (maintainer release):**
 
@@ -132,8 +157,22 @@ The output installer is fully signed and notarized — no Gatekeeper warnings on
 
 ## Development
 
-```powershell
-dotnet build
+```bash
 dotnet test
-dotnet run --project src\ProSlideRelay.Server\ProSlideRelay.Server.csproj
+dotnet run --project src/ProSlideRelay.Server/ProSlideRelay.Server.csproj
 ```
+
+**Note on building the whole solution:** a plain `dotnet build` at the repo root
+builds every project, including `ProSlideRelay.Tray` (Windows Forms) — that project
+only builds on Windows. On macOS, build the projects you need individually:
+
+```bash
+# Console server (the core; used by both the Windows and macOS apps)
+dotnet build src/ProSlideRelay.Server/ProSlideRelay.Server.csproj
+
+# Menu bar app — a macOS .app bundle is self-contained, so it must be
+# published (with a runtime identifier), not plain-built:
+dotnet publish src/ProSlideRelay.Mac/ProSlideRelay.Mac.csproj -c Release -r osx-arm64
+```
+
+For a packaged `.app` + `.pkg`, use `installer-mac/build.sh` (see the macOS section above).

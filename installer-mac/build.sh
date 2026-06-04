@@ -11,7 +11,8 @@
 #     --password  <app-specific-password from appleid.apple.com>
 #
 # Optional in both modes:
-#   --version 1.2.0   (default: 1.0.0)
+#   --version 1.2.0        (default: 1.0.0)
+#   --arch    arm64|x64|universal   (default: universal)
 #
 # Run from the repo root.
 
@@ -22,8 +23,10 @@ set -euo pipefail
 BUNDLE_ID="com.prosliderlay.app"
 APP_NAME="ProSlideRelay"
 EXECUTABLE="ProSlideRelay"          # Must match AssemblyName in .csproj
+TFM_DIR="net10.0-macos"             # Must match TargetFramework in .csproj
 
 VERSION="1.0.0"
+ARCH="universal"
 TEAM_ID=""
 APPLE_ID=""
 APP_PASSWORD=""
@@ -41,6 +44,7 @@ fi
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --version)      VERSION="$2";      shift 2 ;;
+        --arch)         ARCH="$2";         shift 2 ;;
         --team-id)      TEAM_ID="$2";      shift 2 ;;
         --apple-id)     APPLE_ID="$2";     shift 2 ;;
         --password)     APP_PASSWORD="$2"; shift 2 ;;
@@ -49,12 +53,20 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+case "$ARCH" in
+    arm64)     RIDS=("osx-arm64") ;;
+    x64)       RIDS=("osx-x64") ;;
+    universal) RIDS=("osx-arm64" "osx-x64") ;;
+    *) echo "  ✗ --arch must be one of: arm64, x64, universal"; exit 1 ;;
+esac
+
 SIGN_APP="Developer ID Application: ${TEAM_ID}"
 SIGN_PKG="Developer ID Installer: ${TEAM_ID}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PROJECT="${REPO_ROOT}/src/ProSlideRelay.Mac/ProSlideRelay.Mac.csproj"
+BIN_BASE="${REPO_ROOT}/src/ProSlideRelay.Mac/bin/Release/${TFM_DIR}"
 OUT_DIR="${REPO_ROOT}/publish/mac"
 APP_BUNDLE="${OUT_DIR}/${APP_NAME}.app"
 OUTPUT_DIR="${SCRIPT_DIR}/output"
@@ -62,7 +74,7 @@ OUTPUT_DIR="${SCRIPT_DIR}/output"
 # ── Preflight checks ──────────────────────────────────────────────────────────
 
 echo ""
-echo "  ProSlideRelay macOS build — v${VERSION}"
+echo "  ProSlideRelay macOS build — v${VERSION} (${ARCH})"
 if [[ "$SKIP_SIGNING" == true ]]; then
     echo "  Mode: UNSIGNED (local use only)"
 else
@@ -80,74 +92,81 @@ if [[ "$SKIP_SIGNING" == false ]]; then
     [[ -z "$APP_PASSWORD"  ]] && { echo "  ✗ --password is required for signed builds"; exit 1; }
 fi
 
-# ── Step 1: Publish for both architectures ────────────────────────────────────
+# ── Step 1: Publish each architecture ─────────────────────────────────────────
+#
+# The .NET macOS workload produces a complete .app bundle per architecture under
+# the project's bin/ directory. We disable its built-in .pkg generation
+# (CreatePackage=false) and assemble / sign / package the bundle ourselves.
 
-echo "  ► Publishing arm64…"
-dotnet publish "$PROJECT" -r osx-arm64 -c Release \
-    -p:Version="$VERSION" \
-    --self-contained true \
-    -o "${OUT_DIR}/arm64" \
-    --nologo -v quiet
+for rid in "${RIDS[@]}"; do
+    echo "  ► Publishing ${rid}…"
+    rm -rf "${BIN_BASE}/${rid}/${APP_NAME}.app"
+    dotnet publish "$PROJECT" -r "$rid" -c Release \
+        -p:Version="$VERSION" \
+        -p:CreatePackage=false \
+        --self-contained true \
+        --nologo -v quiet
+done
 
-echo "  ► Publishing x64…"
-dotnet publish "$PROJECT" -r osx-x64 -c Release \
-    -p:Version="$VERSION" \
-    --self-contained true \
-    -o "${OUT_DIR}/x64" \
-    --nologo -v quiet
-
-# ── Step 2: Universal binary ──────────────────────────────────────────────────
-
-echo "  ► Creating universal binary…"
-
-ARM64_BIN="${OUT_DIR}/arm64/${EXECUTABLE}"
-X64_BIN="${OUT_DIR}/x64/${EXECUTABLE}"
-UNIVERSAL_BIN="${OUT_DIR}/${EXECUTABLE}"
-
-[[ -f "$ARM64_BIN" ]] || { echo "  ✗ arm64 binary not found: ${ARM64_BIN}"; exit 1; }
-[[ -f "$X64_BIN"   ]] || { echo "  ✗ x64 binary not found: ${X64_BIN}";    exit 1; }
-
-lipo -create "$ARM64_BIN" "$X64_BIN" -output "$UNIVERSAL_BIN"
-
-# ── Step 3: Assemble the .app bundle ─────────────────────────────────────────
+# ── Step 2: Assemble the .app bundle (universal via lipo when needed) ──────────
 
 echo "  ► Assembling .app bundle…"
 
-MACOS_DIR="${APP_BUNDLE}/Contents/MacOS"
-RESOURCES_DIR="${APP_BUNDLE}/Contents/Resources"
+PRIMARY_RID="${RIDS[0]}"
+PRIMARY_APP="${BIN_BASE}/${PRIMARY_RID}/${APP_NAME}.app"
+
+[[ -d "$PRIMARY_APP" ]] || { echo "  ✗ build output not found: ${PRIMARY_APP}"; exit 1; }
 
 rm -rf "$APP_BUNDLE"
-mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
+mkdir -p "$OUT_DIR"
+cp -R "$PRIMARY_APP" "$APP_BUNDLE"
 
-# Managed assemblies are arch-neutral — copy from arm64 publish
-rsync -a --exclude="${EXECUTABLE}" "${OUT_DIR}/arm64/" "$MACOS_DIR/"
+# For a universal build, fatten the native Mach-O files (the app host executable
+# and the runtime dylibs) by merging the second architecture into the copy.
+if [[ "${#RIDS[@]}" -gt 1 ]]; then
+    echo "  ► Creating universal binaries…"
+    SECOND_RID="${RIDS[1]}"
+    SECOND_APP="${BIN_BASE}/${SECOND_RID}/${APP_NAME}.app"
+    [[ -d "$SECOND_APP" ]] || { echo "  ✗ build output not found: ${SECOND_APP}"; exit 1; }
 
-# Replace the arch-specific executable with the universal one
-cp "$UNIVERSAL_BIN" "${MACOS_DIR}/${EXECUTABLE}"
-chmod +x "${MACOS_DIR}/${EXECUTABLE}"
+    # The main executable
+    lipo -create \
+        "${PRIMARY_APP}/Contents/MacOS/${EXECUTABLE}" \
+        "${SECOND_APP}/Contents/MacOS/${EXECUTABLE}" \
+        -output "${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE}"
 
-# Lipo any native dylibs that differ between architectures
-find "${OUT_DIR}/arm64" -name "*.dylib" | while read -r arm64_lib; do
-    rel="${arm64_lib#${OUT_DIR}/arm64/}"
-    x64_lib="${OUT_DIR}/x64/${rel}"
-    if [[ -f "$x64_lib" ]]; then
-        lipo -create "$arm64_lib" "$x64_lib" \
-            -output "${MACOS_DIR}/${rel}" 2>/dev/null || true
-    fi
-done
+    # Native runtime dylibs (managed .dll assemblies are architecture-neutral)
+    find "${PRIMARY_APP}" -name "*.dylib" | while read -r primary_lib; do
+        rel="${primary_lib#${PRIMARY_APP}/}"
+        second_lib="${SECOND_APP}/${rel}"
+        if [[ -f "$second_lib" ]]; then
+            lipo -create "$primary_lib" "$second_lib" -output "${APP_BUNDLE}/${rel}"
+        fi
+    done
+fi
 
-# Write Info.plist, substituting the version placeholder
+# Write Info.plist, substituting the version placeholder. This is the bundle's
+# canonical Info.plist (menu-bar-only via LSUIElement, min OS version, etc.).
 sed "s/\$(BUNDLE_VERSION)/${VERSION}/g" \
     "${SCRIPT_DIR}/Info.plist" > "${APP_BUNDLE}/Contents/Info.plist"
 
 echo "APPL????" > "${APP_BUNDLE}/Contents/PkgInfo"
 
-# ── Step 4: Sign (signed builds only) ────────────────────────────────────────
+# ── Step 3: Sign ──────────────────────────────────────────────────────────────
+#
+# lipo and the Info.plist rewrite invalidate the signature the SDK applied, so
+# we always re-sign. Unsigned builds get an ad-hoc signature (sufficient to run
+# locally); release builds get a Developer ID signature with the hardened runtime.
 
-if [[ "$SKIP_SIGNING" == false ]]; then
+if [[ "$SKIP_SIGNING" == true ]]; then
+    echo "  ► Ad-hoc signing (unsigned build)…"
+    # Sign nested Mach-O files first, then the bundle — order matters.
+    find "${APP_BUNDLE}" -type f \( -name "*.dylib" -o -name "createdump" \) | while read -r lib; do
+        codesign --force --sign - "$lib"
+    done
+    codesign --force --sign - "$APP_BUNDLE"
+else
     echo "  ► Signing .app bundle…"
-
-    # Sign nested dylibs first — order matters
     find "${APP_BUNDLE}" -type f \( -name "*.dylib" -o -name "createdump" \) | while read -r lib; do
         codesign --force --sign "$SIGN_APP" \
             --options runtime \
@@ -163,11 +182,9 @@ if [[ "$SKIP_SIGNING" == false ]]; then
 
     echo "  ► Verifying signature…"
     codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
-else
-    echo "  ► Skipping code signing (--skip-signing)"
 fi
 
-# ── Step 5: Notarize (signed builds only) ────────────────────────────────────
+# ── Step 4: Notarize (signed builds only) ─────────────────────────────────────
 
 if [[ "$SKIP_SIGNING" == false ]]; then
     echo "  ► Zipping for notarization…"
@@ -183,11 +200,9 @@ if [[ "$SKIP_SIGNING" == false ]]; then
 
     echo "  ► Stapling notarization ticket…"
     xcrun stapler staple "$APP_BUNDLE"
-else
-    echo "  ► Skipping notarization (--skip-signing)"
 fi
 
-# ── Step 6: Build the .pkg installer ─────────────────────────────────────────
+# ── Step 5: Build the .pkg installer ──────────────────────────────────────────
 
 echo "  ► Building .pkg installer…"
 mkdir -p "$OUTPUT_DIR"
@@ -195,7 +210,7 @@ mkdir -p "$OUTPUT_DIR"
 PKG_ROOT="${OUT_DIR}/pkg-root"
 rm -rf "$PKG_ROOT"
 mkdir -p "${PKG_ROOT}/Applications"
-cp -r "$APP_BUNDLE" "${PKG_ROOT}/Applications/"
+cp -R "$APP_BUNDLE" "${PKG_ROOT}/Applications/"
 
 COMPONENT_PKG="${OUTPUT_DIR}/ProSlideRelay-component.pkg"
 FINAL_PKG="${OUTPUT_DIR}/${APP_NAME}-${VERSION}.pkg"

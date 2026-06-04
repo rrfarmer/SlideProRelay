@@ -189,7 +189,7 @@ public sealed class StatusBarController : NSObject
 
         var attrs = new NSMutableDictionary();
         attrs[NSStringAttributeKey.Font] = NSFont.BoldSystemFontOfSize(11);
-        attrs[NSStringAttributeKey.ForegroundColor] = NSColor.LabelColor;
+        attrs[NSStringAttributeKey.ForegroundColor] = NSColor.Label;
 
         var str = new NSAttributedString("P7", attrs);
         str.DrawAtPoint(new CGPoint(2, 2));

@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace ProSlideRelay.Mac;
 
-internal sealed class MacSettings
+public sealed class MacSettings
 {
     private static readonly string SettingsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
