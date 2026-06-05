@@ -1,58 +1,119 @@
-# SlideProRelay
+# ProSlideRelay
 
-SlideProRelay runs on the same computer as ProPresenter 7. It reads the current slide text and shares it with phones or other devices on your local network — no extra hardware required.
+**Put your sermon slides on every phone in the room — automatically.**
 
-## What it does
+ProSlideRelay runs on the same computer as ProPresenter 7. As you advance slides, the text appears live on any phone or tablet connected to your Wi-Fi. Nothing for your congregation to install — they just open a link in their browser.
 
-- Connects to ProPresenter's built-in API.
-- Displays current slide text on any phone or tablet connected to your Wi-Fi.
-- Slides update live as you advance through ProPresenter — no refresh needed.
-- Shows a "ProPresenter offline" message if the connection drops, and recovers automatically.
+> ### ProSlideRelay is — and will always be — free and open source.
+> No subscriptions. No licenses. No catch. Free forever.
 
-## Requirements
+---
 
-- Windows or macOS
-- [.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)
-- ProPresenter 7 with Network enabled (see setup below)
+## Features
 
-## ProPresenter setup
+- Live slide text delivered to any phone or tablet on your network
+- Updates instantly as you advance slides — no refresh needed
+- Works over your existing Wi-Fi — no extra hardware required
+- Reconnects automatically if ProPresenter restarts
+- Windows system tray app and macOS menu bar app — runs quietly in the background
 
-1. Open ProPresenter → **Preferences** → **Network**
-2. Turn on **Enable Network**
-3. Note the **Port** shown (default is `50001`) — you only need this if it differs from the default
+## Coming Soon
 
-## Running
+- **Text customization** — adjust font size, color, and style to suit your preferences
+- **Chord charts** — display chords alongside lyrics for musicians
+- **Translations** — show slide text in multiple languages simultaneously
 
-Windows (PowerShell):
+## Sponsored by SlidePro.io
+
+ProSlideRelay is proudly sponsored by **[SlidePro.io](https://slidepro.io)** — a platform built for churches that want to take congregation engagement further.
+
+Coming soon: a direct integration so ProPresenter 7 can relay slides straight to SlidePro.io, enabling cloud-based delivery, remote viewers, and more — all without leaving ProPresenter.
+
+---
+
+## Getting Started
+
+### Windows
+
+Download and run `SlideProRelay-Setup.exe`. The installer adds a system tray icon, sets up your firewall automatically, and optionally starts with Windows.
+
+### macOS
+
+Download and run `SlideProRelay.pkg`. The app appears as a **P7** icon in your menu bar — no Dock icon. Click it to get the link to share with your congregation.
+
+### Using it
+
+1. Open ProPresenter and enable **Network** in Preferences → Network
+2. Launch ProSlideRelay
+3. Share the network URL shown (e.g. `http://192.168.1.42:5174`) — attendees open it in any browser
+
+---
+---
+
+## Technical Reference
+
+### Requirements
+
+- Windows 10+ or macOS 12+
+- [.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (or the SDK to build)
+- ProPresenter 7 with Network enabled
+
+### ProPresenter Setup
+
+Open ProPresenter → **Preferences** → **Network** → enable **Enable Network**. The port is auto-detected — you normally don't need to configure anything.
+
+### Building
+
+**Windows installer** (requires [Inno Setup 6](https://jrsoftware.org/isdl.php)):
 
 ```powershell
+.\installer\build.ps1
+# or with a specific version:
+.\installer\build.ps1 -Version 1.2.0
+```
+
+Output: `installer\output\SlideProRelay-1.0.0-Setup.exe`
+
+**macOS app** (requires Xcode CLT and .NET macOS workload):
+
+```bash
+xcode-select --install
+dotnet workload install macos
+
+# Unsigned build (local use):
+./installer-mac/build.sh --skip-signing
+
+# Signed + notarized release build:
+./installer-mac/build.sh --team-id YOUR_TEAM_ID --apple-id you@example.com --password xxxx-xxxx-xxxx-xxxx
+```
+
+Output: `installer-mac/output/SlideProRelay-1.0.0.pkg`
+
+For unsigned builds, Gatekeeper will warn on first open — right-click the `.pkg` → Open to bypass.
+
+**Run from source:**
+
+```powershell
+# Windows
 dotnet run --project src\SlideProRelay.Server\SlideProRelay.Server.csproj
 ```
 
-macOS / Linux (bash):
-
 ```bash
+# macOS
 dotnet run --project src/SlideProRelay.Server/SlideProRelay.Server.csproj
 ```
 
-When it starts, you will see something like:
+**Tests:**
 
-```
-  SlideProRelay is running
-
-  Local:   http://localhost:5174
-  Network: http://192.168.1.42:5174
-
-  Open the Network URL on your phone to follow along.
+```bash
+dotnet test
 ```
 
-Type the **Network** address into a phone browser. The slide text will appear and update as you advance slides in ProPresenter.
+> On macOS, avoid `dotnet build` at the repo root — the Windows tray project won't build. Build individual projects instead.
 
-Press `Ctrl+C` to stop.
+### Configuration
 
-## Configuration
-
-Edit `src/SlideProRelay.Server/appsettings.json` to change settings:
+`src/SlideProRelay.Server/appsettings.json`:
 
 ```json
 "ProPresenter": {
@@ -63,127 +124,20 @@ Edit `src/SlideProRelay.Server/appsettings.json` to change settings:
 }
 ```
 
-**Port auto-detection:** ProPresenter assigns its network/API port automatically
-and it can change between launches. When `AutoDetectPort` is `true` (the default)
-and `Host` is local, SlideProRelay reads the current port straight from
-ProPresenter's own preferences — so you normally never set `Port` at all. The
-relay also re-checks on connection loss, so if ProPresenter restarts on a new
-port it reconnects on its own. `Port` is used only as a fallback (detection off,
-a remote `Host`, or detection unavailable). Auto-detection is implemented on
-macOS (reads `com.renewedvision.propresenter` preferences) and Windows (reads
-`%APPDATA%\RenewedVision\ProPresenter\Preferences\NetworkPreferences.proPref`).
+Port auto-detection is on by default — ProSlideRelay reads the active port directly from ProPresenter's preferences and re-checks on reconnect, so `Port` is only used as a fallback.
 
-You can also override any setting with an environment variable:
+Override any setting with an environment variable:
 
 ```powershell
-# Windows (PowerShell)
 $env:ProPresenter__Port = "50002"
 dotnet run --project src\SlideProRelay.Server\SlideProRelay.Server.csproj
 ```
 
-```bash
-# macOS / Linux (bash)
-ProPresenter__Port=50002 dotnet run --project src/SlideProRelay.Server/SlideProRelay.Server.csproj
-```
-
-## API
+### API
 
 | Endpoint | Description |
 |---|---|
-| `GET /` | Phone-friendly live slide display |
-| `GET /events` | Server-Sent Events stream (used by the browser page) |
+| `GET /` | Live slide display (phone-friendly) |
+| `GET /events` | Server-Sent Events stream |
 | `GET /api/current` | Current slide as JSON |
 | `GET /api/health` | Returns `ok` if the relay is running |
-
-## Windows installer
-
-The tray app runs as a system tray icon — no console window. The installer adds a Start Menu shortcut, optional desktop shortcut, optional start-with-Windows, and configures the Windows Firewall automatically.
-
-**Prerequisites (one-time):**
-1. Install [Inno Setup 6](https://jrsoftware.org/isdl.php) (free)
-
-**Build the installer:**
-
-```powershell
-.\installer\build.ps1
-# or with a specific version:
-.\installer\build.ps1 -Version 1.2.0
-```
-
-The installer is written to `installer\output\SlideProRelay-1.0.0-Setup.exe`.
-
-**What the installer does:**
-- Installs to `Program Files\SlideProRelay`
-- Adds a Start Menu shortcut
-- Optional: desktop shortcut
-- Optional: start automatically when Windows starts
-- Adds a Windows Firewall rule so phones on your network can connect
-- Registers a proper uninstaller (via Add/Remove Programs)
-
-Settings are saved to `%APPDATA%\SlideProRelay\settings.json` so they survive reinstalls and updates.
-
-## macOS app (menu bar)
-
-The macOS app lives in the menu bar as a **P7** icon — no Dock icon. Click it to open the browser, adjust settings, or enable "Start at Login".
-
-**Prerequisites (one-time, on your Mac):**
-
-```bash
-xcode-select --install               # Xcode Command Line Tools (provides lipo, codesign, pkgbuild)
-dotnet workload install macos        # .NET macOS AppKit bindings
-```
-
-You also need the [.NET 10 **SDK**](https://dotnet.microsoft.com/download/dotnet/10.0)
-(the SDK, not just the runtime) to build. Verify with `dotnet --version` (expects `10.0.x`)
-and `dotnet workload list` (expects `macos` listed).
-
-**Unsigned build (anyone — for local use/testing):**
-
-```bash
-chmod +x installer-mac/build.sh
-./installer-mac/build.sh --skip-signing
-```
-
-By default this produces a **universal** binary (Apple Silicon + Intel). To build only
-for your own machine — faster — pass `--arch arm64` (Apple Silicon) or `--arch x64` (Intel).
-
-Output: `installer-mac/output/SlideProRelay-1.0.0.pkg`
-
-Install it by double-clicking the `.pkg` (the app lands in `/Applications`). Because the
-build is unsigned, macOS Gatekeeper will warn on first open — **right-click the `.pkg` →
-Open** to bypass. The app then runs as a **P7** menu bar icon with no Dock icon; click it
-for the browser link, settings, and "Start at Login".
-
-**Signed + notarized build (maintainer release):**
-
-```bash
-./installer-mac/build.sh \
-  --team-id   YOUR_TEAM_ID \
-  --apple-id  you@example.com \
-  --password  xxxx-xxxx-xxxx-xxxx
-```
-
-Requires an [Apple Developer account](https://developer.apple.com) ($99/year), Developer ID certificates installed in Keychain, and an [app-specific password](https://appleid.apple.com).
-The output installer is fully signed and notarized — no Gatekeeper warnings on any Mac.
-
-## Development
-
-```bash
-dotnet test
-dotnet run --project src/SlideProRelay.Server/SlideProRelay.Server.csproj
-```
-
-**Note on building the whole solution:** a plain `dotnet build` at the repo root
-builds every project, including `SlideProRelay.Tray` (Windows Forms) — that project
-only builds on Windows. On macOS, build the projects you need individually:
-
-```bash
-# Console server (the core; used by both the Windows and macOS apps)
-dotnet build src/SlideProRelay.Server/SlideProRelay.Server.csproj
-
-# Menu bar app — a macOS .app bundle is self-contained, so it must be
-# published (with a runtime identifier), not plain-built:
-dotnet publish src/SlideProRelay.Mac/SlideProRelay.Mac.csproj -c Release -r osx-arm64
-```
-
-For a packaged `.app` + `.pkg`, use `installer-mac/build.sh` (see the macOS section above).
