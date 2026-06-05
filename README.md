@@ -1,6 +1,6 @@
 # ProSlideRelay
 
-**Put your sermon slides on every phone in the room — automatically.**
+**Put your lyrics on every phone in the room — automatically.**
 
 ProSlideRelay runs on the same computer as ProPresenter 7. As you advance slides, the text appears live on any phone or tablet connected to your Wi-Fi. Nothing for your congregation to install — they just open a link in their browser.
 
