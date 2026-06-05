@@ -7,18 +7,21 @@ public sealed class SettingsPanel : NSPanel
     private readonly NSTextField _statusLabel;
     private readonly NSTextField _localUrlLabel;
     private readonly NSTextField _networkUrlLabel;
-    private readonly NSButton _qrButton;
     private readonly NSImageView _qrImageView;
     private readonly NSTextField _pro7PortField;
     private readonly NSTextField _relayPortField;
     private readonly NSTextField _saveMessage;
     private readonly Action<MacSettings> _onSave;
     private MacSettings _settings;
-    private bool _qrVisible;
+
+    // The URL the currently displayed QR encodes. Used to avoid reloading (and
+    // flickering) the QR on every status tick — we only refetch when it changes.
+    private string? _qrKey;
+    private bool _qrLoading;
 
     public SettingsPanel(MacSettings settings, Action<MacSettings> onSave)
         : base(
-            new CGRect(0, 0, 360, 318),
+            new CGRect(0, 0, 360, 524),
             NSWindowStyle.Titled | NSWindowStyle.Closable,
             NSBackingStore.Buffered,
             false)
@@ -37,22 +40,22 @@ public sealed class SettingsPanel : NSPanel
 
         // ── Status ────────────────────────────────────────────────────────────
 
-        v.AddSubview(SectionLabel("PROPRESENTER STATUS", new CGRect(x, 278, w, 14)));
+        v.AddSubview(SectionLabel("PROPRESENTER STATUS", new CGRect(x, 496, w, 14)));
 
-        _statusLabel = TextField("Not detected", new CGRect(x, 256, w, 18));
+        _statusLabel = TextField("Not detected", new CGRect(x, 474, w, 18));
         v.AddSubview(_statusLabel);
 
         // ── URLs ──────────────────────────────────────────────────────────────
 
-        v.AddSubview(SectionLabel("PHONE URL", new CGRect(x, 228, w, 14)));
+        v.AddSubview(SectionLabel("PHONE URL", new CGRect(x, 450, w, 14)));
 
-        _localUrlLabel = LinkField($"http://localhost:{settings.RelayPort}", new CGRect(x, 208, w, 18));
+        _localUrlLabel = LinkField($"http://localhost:{settings.RelayPort}", new CGRect(x, 426, w, 18));
         v.AddSubview(_localUrlLabel);
 
-        _networkUrlLabel = LinkField("Detecting…", new CGRect(x, 188, w, 18));
+        _networkUrlLabel = LinkField("Detecting…", new CGRect(x, 406, w, 18));
         v.AddSubview(_networkUrlLabel);
 
-        var openBtn = new NSButton(new CGRect(x, 162, 150, 22));
+        var openBtn = new NSButton(new CGRect(x, 376, 150, 22));
         openBtn.Title = "Open in Browser";
         openBtn.BezelStyle = NSBezelStyle.Rounded;
         openBtn.Activated += (_, _) =>
@@ -60,27 +63,21 @@ public sealed class SettingsPanel : NSPanel
                 new NSUrl($"http://localhost:{_settings.RelayPort}"));
         v.AddSubview(openBtn);
 
-        _qrButton = new NSButton(new CGRect(x + 158, 162, 120, 22));
-        _qrButton.Title = "Show QR Code";
-        _qrButton.BezelStyle = NSBezelStyle.Rounded;
-        _qrButton.Activated += ToggleQr;
-        v.AddSubview(_qrButton);
-
-        _qrImageView = new NSImageView(new CGRect(x, -10, 200, 200));
+        // QR code — always visible, centered, scan to open the phone URL.
+        _qrImageView = new NSImageView(new CGRect(80, 166, 200, 200));
         _qrImageView.ImageScaling = NSImageScale.ProportionallyUpOrDown;
-        _qrImageView.Hidden = true;
         v.AddSubview(_qrImageView);
 
         // ── Settings ──────────────────────────────────────────────────────────
 
-        v.AddSubview(SectionLabel("SETTINGS", new CGRect(x, 132, w, 14)));
+        v.AddSubview(SectionLabel("SETTINGS", new CGRect(x, 138, w, 14)));
 
-        v.AddSubview(BodyLabel("ProPresenter Port:", new CGRect(x, 110, 160, 18)));
-        _pro7PortField = EditableField(settings.ProPresenterPort.ToString(), new CGRect(190, 108, 80, 22));
+        v.AddSubview(BodyLabel("ProPresenter Port:", new CGRect(x, 112, 160, 18)));
+        _pro7PortField = EditableField(settings.ProPresenterPort.ToString(), new CGRect(190, 109, 80, 22));
         v.AddSubview(_pro7PortField);
 
-        v.AddSubview(BodyLabel("Relay Port (phone URL):", new CGRect(x, 82, 160, 18)));
-        _relayPortField = EditableField(settings.RelayPort.ToString(), new CGRect(190, 80, 80, 22));
+        v.AddSubview(BodyLabel("Relay Port (phone URL):", new CGRect(x, 84, 160, 18)));
+        _relayPortField = EditableField(settings.RelayPort.ToString(), new CGRect(190, 81, 80, 22));
         v.AddSubview(_relayPortField);
 
         // ── Save ──────────────────────────────────────────────────────────────
@@ -96,6 +93,9 @@ public sealed class SettingsPanel : NSPanel
         _saveMessage.TextColor = NSColor.SystemGreen;
         _saveMessage.Font = NSFont.SystemFontOfSize(11);
         v.AddSubview(_saveMessage);
+
+        // Kick off the initial QR load so it appears without waiting for a tick.
+        RefreshQr();
     }
 
     public void UpdateStatus(bool connected, IReadOnlyList<string> urls)
@@ -112,48 +112,42 @@ public sealed class SettingsPanel : NSPanel
                 ? $"http://{lan}:{_settings.RelayPort}"
                 : "Network address not found";
 
-            _qrImageView.Image = null;
-            if (_qrVisible)
-                _ = LoadQrImageAsync();
+            RefreshQr();
         });
     }
 
-    private void ToggleQr(object? sender, EventArgs e)
+    // Reload the QR only when the encoded URL actually changes — never clears the
+    // existing image, so the QR stays rock-steady (no per-tick flicker).
+    private void RefreshQr()
     {
-        _qrVisible = !_qrVisible;
-        _qrButton.Title = _qrVisible ? "Hide QR Code" : "Show QR Code";
-        _qrImageView.Hidden = !_qrVisible;
+        var lan = NetworkUrlPrinter.GetLanIp();
+        var key = lan is not null
+            ? $"http://{lan}:{_settings.RelayPort}"
+            : $"http://localhost:{_settings.RelayPort}";
 
-        var f = Frame;
-        const float qrHeight = 220f;
-        if (_qrVisible)
-        {
-            _qrImageView.Frame = new CGRect(20, 10, 200, 200);
-            f.Y -= qrHeight;
-            f.Height += qrHeight;
-        }
-        else
-        {
-            f.Y += qrHeight;
-            f.Height -= qrHeight;
-        }
-        SetFrame(f, true);
+        if (key == _qrKey || _qrLoading)
+            return;
 
-        if (_qrVisible && _qrImageView.Image is null)
-            _ = LoadQrImageAsync();
+        _ = LoadQrImageAsync(key);
     }
 
-    private async Task LoadQrImageAsync()
+    private async Task LoadQrImageAsync(string key)
     {
+        _qrLoading = true;
         try
         {
             using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
             var bytes = await client.GetByteArrayAsync($"http://localhost:{_settings.RelayPort}/api/qr");
             var data = Foundation.NSData.FromArray(bytes);
             var image = new AppKit.NSImage(data);
-            InvokeOnMainThread(() => _qrImageView.Image = image);
+            InvokeOnMainThread(() =>
+            {
+                _qrImageView.Image = image;
+                _qrKey = key; // only mark success once the image is actually set
+            });
         }
-        catch { /* server not ready yet */ }
+        catch { /* server not ready yet — RefreshQr will retry on the next tick */ }
+        finally { _qrLoading = false; }
     }
 
     private void OnSave(object? sender, EventArgs e)
