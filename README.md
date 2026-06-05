@@ -1,10 +1,10 @@
-# ProSlideRelay
+# SlideProRelay
 
 **Put your lyrics on every phone in the room — automatically.**
 
-ProSlideRelay runs on the same computer as ProPresenter 7. As you advance slides, the text appears live on any phone or tablet connected to your Wi-Fi. Nothing for your congregation to install — they just open a link in their browser.
+SlideProRelay runs on the same computer as ProPresenter 7. As you advance slides, the text appears live on any phone or tablet connected to your Wi-Fi. Nothing for your congregation to install — they just open a link in their browser.
 
-> ### ProSlideRelay is — and will always be — free and open source.
+> ### SlideProRelay is — and will always be — free and open source.
 > No subscriptions. No licenses. No catch. Free forever.
 
 ---
@@ -25,7 +25,7 @@ ProSlideRelay runs on the same computer as ProPresenter 7. As you advance slides
 
 ## Sponsored by SlidePro.io
 
-ProSlideRelay is proudly sponsored by **[SlidePro.io](https://slidepro.io)** — a platform built for churches that want to take congregation engagement further.
+SlideProRelay is proudly sponsored by **[SlidePro.io](https://slidepro.io)** — a platform built for churches that want to take congregation engagement further.
 
 Coming soon: a direct integration so ProPresenter 7 can relay slides straight to SlidePro.io, enabling cloud-based delivery, remote viewers, and more — all without leaving ProPresenter.
 
@@ -44,7 +44,7 @@ Download and run `SlideProRelay.pkg`. The app appears as a **P7** icon in your m
 ### Using it
 
 1. Open ProPresenter and enable **Network** in Preferences → Network
-2. Launch ProSlideRelay
+2. Launch SlideProRelay
 3. Share the network URL shown (e.g. `http://192.168.1.42:5174`) — attendees open it in any browser
 
 ---
@@ -124,7 +124,7 @@ dotnet test
 }
 ```
 
-Port auto-detection is on by default — ProSlideRelay reads the active port directly from ProPresenter's preferences and re-checks on reconnect, so `Port` is only used as a fallback.
+Port auto-detection is on by default — SlideProRelay reads the active port directly from ProPresenter's preferences and re-checks on reconnect, so `Port` is only used as a fallback.
 
 Override any setting with an environment variable:
 
