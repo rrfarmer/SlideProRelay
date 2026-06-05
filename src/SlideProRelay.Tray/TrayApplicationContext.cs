@@ -1,5 +1,4 @@
 using SlideProRelay.Server;
-using SlideProRelay.Server.ProPresenter;
 using SlideProRelay.Server.ProPresenter.Models;
 
 namespace SlideProRelay.Tray;
@@ -18,7 +17,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         _settings = TraySettings.Load();
 
-        _iconConnected    = BuildIcon(connected: true);
+        _iconConnected = BuildIcon(connected: true);
         _iconDisconnected = BuildIcon(connected: false);
 
         var menu = new ContextMenuStrip();

@@ -1,8 +1,6 @@
-using System.Net.Http.Json;
-using System.Text.Json;
-using Microsoft.Extensions.Options;
 using SlideProRelay.Server.ProPresenter.Api;
 using SlideProRelay.Server.ProPresenter.Models;
+using System.Text.Json;
 
 namespace SlideProRelay.Server.ProPresenter;
 

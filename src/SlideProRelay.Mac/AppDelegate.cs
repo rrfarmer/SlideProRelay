@@ -1,6 +1,3 @@
-using AppKit;
-using Foundation;
-
 namespace SlideProRelay.Mac;
 
 [Register("AppDelegate")]

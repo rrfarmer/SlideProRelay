@@ -1,10 +1,5 @@
-using AppKit;
-using CoreGraphics;
-using Foundation;
 using SlideProRelay.Server;
-using SlideProRelay.Server.ProPresenter;
 using SlideProRelay.Server.ProPresenter.Models;
-using SlideProRelay.Server.Startup;
 
 namespace SlideProRelay.Mac;
 

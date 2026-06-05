@@ -1,9 +1,9 @@
-using System.Text.Json;
 using Microsoft.AspNetCore.Http.Features;
 using QRCoder;
 using SlideProRelay.Server.ProPresenter;
 using SlideProRelay.Server.ProPresenter.Models;
 using SlideProRelay.Server.Startup;
+using System.Text.Json;
 
 namespace SlideProRelay.Server;
 
