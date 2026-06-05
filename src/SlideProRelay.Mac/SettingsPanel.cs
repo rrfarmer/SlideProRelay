@@ -10,11 +10,14 @@ public sealed class SettingsPanel : NSPanel
     private readonly NSTextField _statusLabel;
     private readonly NSTextField _localUrlLabel;
     private readonly NSTextField _networkUrlLabel;
+    private readonly NSButton _qrButton;
+    private readonly NSImageView _qrImageView;
     private readonly NSTextField _pro7PortField;
     private readonly NSTextField _relayPortField;
     private readonly NSTextField _saveMessage;
     private readonly Action<MacSettings> _onSave;
     private MacSettings _settings;
+    private bool _qrVisible;
 
     public SettingsPanel(MacSettings settings, Action<MacSettings> onSave)
         : base(
@@ -60,6 +63,17 @@ public sealed class SettingsPanel : NSPanel
                 new NSUrl($"http://localhost:{_settings.RelayPort}"));
         v.AddSubview(openBtn);
 
+        _qrButton = new NSButton(new CGRect(x + 158, 162, 120, 22));
+        _qrButton.Title = "Show QR Code";
+        _qrButton.BezelStyle = NSBezelStyle.Rounded;
+        _qrButton.Activated += ToggleQr;
+        v.AddSubview(_qrButton);
+
+        _qrImageView = new NSImageView(new CGRect(x, -10, 200, 200));
+        _qrImageView.ImageScaling = NSImageScale.ProportionallyUpOrDown;
+        _qrImageView.Hidden = true;
+        v.AddSubview(_qrImageView);
+
         // ── Settings ──────────────────────────────────────────────────────────
 
         v.AddSubview(SectionLabel("SETTINGS", new CGRect(x, 132, w, 14)));
@@ -100,7 +114,49 @@ public sealed class SettingsPanel : NSPanel
             _networkUrlLabel.StringValue = lan is not null
                 ? $"http://{lan}:{_settings.RelayPort}"
                 : "Network address not found";
+
+            _qrImageView.Image = null;
+            if (_qrVisible)
+                _ = LoadQrImageAsync();
         });
+    }
+
+    private void ToggleQr(object? sender, EventArgs e)
+    {
+        _qrVisible = !_qrVisible;
+        _qrButton.Title = _qrVisible ? "Hide QR Code" : "Show QR Code";
+        _qrImageView.Hidden = !_qrVisible;
+
+        var f = Frame;
+        const float qrHeight = 220f;
+        if (_qrVisible)
+        {
+            _qrImageView.Frame = new CGRect(20, 10, 200, 200);
+            f.Y -= qrHeight;
+            f.Height += qrHeight;
+        }
+        else
+        {
+            f.Y += qrHeight;
+            f.Height -= qrHeight;
+        }
+        SetFrame(f, true);
+
+        if (_qrVisible && _qrImageView.Image is null)
+            _ = LoadQrImageAsync();
+    }
+
+    private async Task LoadQrImageAsync()
+    {
+        try
+        {
+            using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            var bytes = await client.GetByteArrayAsync($"http://localhost:{_settings.RelayPort}/api/qr");
+            var data = Foundation.NSData.FromArray(bytes);
+            var image = new AppKit.NSImage(data);
+            InvokeOnMainThread(() => _qrImageView.Image = image);
+        }
+        catch { /* server not ready yet */ }
     }
 
     private void OnSave(object? sender, EventArgs e)

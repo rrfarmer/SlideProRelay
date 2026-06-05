@@ -74,6 +74,46 @@ internal static class HtmlPage
               white-space: pre-wrap;
               word-break: break-word;
             }
+
+            #qr-toggle {
+              position: fixed;
+              bottom: 1rem;
+              right: 1rem;
+              background: #222;
+              border: 1px solid #444;
+              border-radius: 8px;
+              color: #888;
+              font-size: 0.75rem;
+              padding: 0.4rem 0.7rem;
+              cursor: pointer;
+              z-index: 10;
+              user-select: none;
+            }
+
+            #qr-overlay {
+              display: none;
+              position: fixed;
+              inset: 0;
+              background: rgba(0,0,0,0.85);
+              z-index: 20;
+              align-items: center;
+              justify-content: center;
+              flex-direction: column;
+              gap: 1rem;
+            }
+            #qr-overlay.open { display: flex; }
+
+            #qr-overlay img {
+              width: min(80vw, 80vh);
+              height: min(80vw, 80vh);
+              image-rendering: pixelated;
+              border-radius: 8px;
+            }
+
+            #qr-overlay p {
+              color: #aaa;
+              font-size: 0.8rem;
+            }
           </style>
         </head>
         <body>
@@ -81,6 +121,13 @@ internal static class HtmlPage
           <div id="current"></div>
           <img id="slide" alt="">
           <div id="next"></div>
+
+          <button id="qr-toggle" title="Show QR code">QR</button>
+
+          <div id="qr-overlay">
+            <img id="qr-img" src="/api/qr" alt="QR code">
+            <p>Scan to open on another device</p>
+          </div>
 
           <script>
             const statusEl  = document.getElementById('status');
@@ -164,6 +211,11 @@ internal static class HtmlPage
             }
 
             connect();
+
+            const qrToggle  = document.getElementById('qr-toggle');
+            const qrOverlay = document.getElementById('qr-overlay');
+            qrToggle.addEventListener('click', () => qrOverlay.classList.add('open'));
+            qrOverlay.addEventListener('click', () => qrOverlay.classList.remove('open'));
           </script>
         </body>
         </html>

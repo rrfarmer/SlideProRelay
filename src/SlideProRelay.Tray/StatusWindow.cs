@@ -8,12 +8,14 @@ internal sealed class StatusWindow : Form
     private readonly Label _statusText;
     private readonly LinkLabel _localUrl;
     private readonly LinkLabel _networkUrl;
+    private readonly PictureBox _qrBox;
     private readonly NumericUpDown _portInput;
     private readonly NumericUpDown _relayPortInput;
     private readonly Button _saveButton;
     private readonly Label _saveMsg;
     private readonly Action<TraySettings> _onSave;
     private TraySettings _settings;
+    private string? _lastQrUrl;
 
     public StatusWindow(TraySettings settings, Action<TraySettings> onSave)
     {
@@ -21,7 +23,7 @@ internal sealed class StatusWindow : Form
         _onSave = onSave;
 
         Text = "SlideProRelay";
-        Size = new Size(360, 360);
+        Size = new Size(360, 560);
         MinimumSize = Size;
         MaximumSize = Size;
         FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -69,6 +71,16 @@ internal sealed class StatusWindow : Form
         _networkUrl = MakeLink("Detecting…");
         urlGroup.Controls.Add(_localUrl);
         urlGroup.Controls.Add(_networkUrl);
+
+        _qrBox = new PictureBox
+        {
+            Size = new Size(200, 200),
+            SizeMode = PictureBoxSizeMode.Zoom,
+            BackColor = Color.White,
+            Margin = new Padding(0, 8, 0, 0),
+            Visible = true,
+        };
+        urlGroup.Controls.Add(_qrBox);
 
         // ── Settings ──────────────────────────────────────────
         var settingsGroup = Section("Settings", 8);
@@ -142,12 +154,16 @@ internal sealed class StatusWindow : Form
         Controls.Add(root);
     }
 
-    public void UpdateStatus(bool connected, IEnumerable<string> serverUrls)
+    public void UpdateStatus(bool connected, IEnumerable<string> serverUrls, int activeProPresenterPort)
     {
-        if (InvokeRequired) { Invoke(() => UpdateStatus(connected, serverUrls)); return; }
+        if (InvokeRequired) { Invoke(() => UpdateStatus(connected, serverUrls, activeProPresenterPort)); return; }
 
         _statusDot.ForeColor = connected ? Color.LimeGreen : Color.OrangeRed;
         _statusText.Text = connected ? "Connected" : "Not detected";
+
+        // Show the live auto-detected ProPresenter port unless the user is editing the field.
+        if (!_portInput.Focused && (int)_portInput.Value != activeProPresenterPort)
+            _portInput.Value = activeProPresenterPort;
 
         var relayPort = (int)_relayPortInput.Value;
         _localUrl.Text = $"http://localhost:{relayPort}";
@@ -161,6 +177,28 @@ internal sealed class StatusWindow : Form
             _networkUrl.Links.Clear();
             _networkUrl.Links.Add(0, _networkUrl.Text.Length, _networkUrl.Text);
         }
+
+        RefreshQrIfNeeded(relayPort);
+    }
+
+    /// <summary>
+    /// Reloads the QR image only when the URL has changed or the previous
+    /// load failed, preventing the constant clear-reload flash on every tick.
+    /// </summary>
+    private void RefreshQrIfNeeded(int relayPort)
+    {
+        var lan = NetworkUrlPrinter.GetLanIp();
+        var url = lan is not null
+            ? $"http://{lan}:{relayPort}"
+            : $"http://localhost:{relayPort}";
+
+        // Same URL and image already loaded — nothing to do.
+        if (url == _lastQrUrl && _qrBox.Image is not null) return;
+
+        _lastQrUrl = url;
+        _qrBox.Image?.Dispose();
+        _qrBox.Image = null;
+        _ = LoadQrImageAsync(relayPort);
     }
 
     private void OnSave(object? sender, EventArgs e)
@@ -185,6 +223,23 @@ internal sealed class StatusWindow : Form
             Hide();
         }
         base.OnFormClosing(e);
+    }
+
+    private async Task LoadQrImageAsync(int relayPort)
+    {
+        try
+        {
+            using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            var bytes = await client.GetByteArrayAsync($"http://localhost:{relayPort}/api/qr");
+            if (IsDisposed) return;
+            using var ms = new System.IO.MemoryStream(bytes);
+            var img = Image.FromStream(ms);
+            if (InvokeRequired)
+                Invoke(() => { _qrBox.Image?.Dispose(); _qrBox.Image = img; });
+            else
+            { _qrBox.Image?.Dispose(); _qrBox.Image = img; }
+        }
+        catch { /* server not ready yet; image stays blank */ }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

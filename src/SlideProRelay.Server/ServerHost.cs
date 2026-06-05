@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.Features;
+using QRCoder;
 using SlideProRelay.Server.ProPresenter;
 using SlideProRelay.Server.ProPresenter.Models;
 using SlideProRelay.Server.Startup;
@@ -121,6 +122,19 @@ public static class ServerHost
                     await SendEvent(ctx.Response, status, ct);
             }
             catch (OperationCanceledException) { }
+        });
+
+        app.MapGet("/api/qr", (IConfiguration config) =>
+        {
+            var relayPort = config.GetValue<int>("Relay:Port", 5174);
+            var lan = NetworkUrlPrinter.GetLanIp();
+            var url = lan is not null
+                ? $"http://{lan}:{relayPort}"
+                : $"http://localhost:{relayPort}";
+
+            var data = new QRCodeGenerator().CreateQrCode(url, QRCodeGenerator.ECCLevel.Q);
+            var png = new PngByteQRCode(data).GetGraphic(8);
+            return Results.File(png, "image/png");
         });
 
         app.MapGet("/", () => Results.Content(HtmlPage.Content, "text/html"));

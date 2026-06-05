@@ -72,7 +72,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
             ? "SlideProRelay — ProPresenter connected"
             : "SlideProRelay — ProPresenter not detected";
 
-        _window?.UpdateStatus(connected, _host?.Urls ?? []);
+        var activePort = _host?.ActiveProPresenterPort ?? _settings.ProPresenterPort;
+        _window?.UpdateStatus(connected, _host?.Urls ?? [], activePort);
     }
 
     // ── Menu handlers ─────────────────────────────────────────────────────────

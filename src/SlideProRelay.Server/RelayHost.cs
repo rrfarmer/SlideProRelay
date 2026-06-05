@@ -22,5 +22,12 @@ public sealed class RelayHost : IAsyncDisposable
 
     public IReadOnlyList<string> Urls => [.. _app.Urls];
 
+    /// <summary>
+    /// The ProPresenter port the relay is actually talking to right now.
+    /// When auto-detection is on this may differ from the configured port.
+    /// </summary>
+    public int ActiveProPresenterPort =>
+        _app.Services.GetRequiredService<ProPresenterEndpoint>().Current.Port;
+
     public ValueTask DisposeAsync() => _app.DisposeAsync();
 }
