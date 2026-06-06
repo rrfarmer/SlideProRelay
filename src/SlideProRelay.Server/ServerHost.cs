@@ -112,6 +112,18 @@ public static class ServerHost
                 : Results.File(frame.Jpeg, "image/jpeg");
         });
 
+        // Tiny companion to /api/screen-capture: the slide key + timestamp of the
+        // currently cached frame. The web UI polls this (cheap JSON) so it only
+        // swaps in the image once the capture for the *current* slide is ready,
+        // avoiding a one-slide-behind flash. 204 when nothing is cached.
+        app.MapGet("/api/screen-capture/key", (ScreenCaptureCache cache) =>
+        {
+            var frame = cache.Latest;
+            return frame is null
+                ? Results.NoContent()
+                : Results.Ok(new { key = frame.Key, capturedAt = frame.CapturedAt });
+        });
+
         // Lists capturable displays + ProPresenter's audience-screen size and which
         // display the relay would capture. Powers the tray "Capture display" picker
         // and is a handy diagnostic for multi-monitor setups.
