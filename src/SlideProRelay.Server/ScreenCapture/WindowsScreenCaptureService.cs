@@ -24,8 +24,8 @@ namespace SlideProRelay.Server.ScreenCapture;
 [SupportedOSPlatform("windows")]
 public sealed class WindowsScreenCaptureService : IScreenCaptureService
 {
-    private const int AcquireTimeoutMs = 250;
-    private const int AcquireRetries = 8; // ~2 s worst case waiting for a frame
+    private const int AcquireTimeoutMs = 200;       // per-AcquireNextFrame wait
+    private const int AcquireBudgetMs = 2000;       // overall budget to land a real frame
     private const long JpegQuality = 85L;
 
     private readonly IOptionsMonitor<ScreenCaptureOptions> _opts;
@@ -107,28 +107,41 @@ public sealed class WindowsScreenCaptureService : IScreenCaptureService
         }
     }
 
-    // The first AcquireNextFrame after DuplicateOutput often returns WAIT_TIMEOUT
-    // until the desktop next changes, so retry briefly before giving up.
+    // Returns a frame that actually contains desktop pixels. The very first frame
+    // after DuplicateOutput is a blank, never-presented surface (LastPresentTime
+    // == 0) — accepting it yields an all-black capture. So skip un-presented
+    // frames and wait (within the budget) for the first real presented frame.
     private bool TryAcquireFrame(IDXGIOutputDuplication duplication, out IDXGIResource? desktopResource)
     {
-        for (var attempt = 0; attempt < AcquireRetries; attempt++)
+        desktopResource = null;
+        var deadline = Environment.TickCount64 + AcquireBudgetMs;
+
+        while (Environment.TickCount64 < deadline)
         {
-            var result = duplication.AcquireNextFrame(AcquireTimeoutMs, out _, out desktopResource);
-            if (result.Success)
-                return true;
+            var result = duplication.AcquireNextFrame(AcquireTimeoutMs, out var info, out var resource);
 
             if (result.Code == Vortice.DXGI.ResultCode.WaitTimeout.Code)
+                continue; // no frame this interval — nothing acquired to release
+
+            if (result.Failure)
             {
-                desktopResource?.Dispose();
-                continue;
+                _logger.LogDebug("AcquireNextFrame failed: {Result}", result);
+                resource?.Dispose();
+                return false;
             }
 
-            _logger.LogDebug("AcquireNextFrame failed: {Result}", result);
-            return false;
+            if (info.LastPresentTime > 0)
+            {
+                desktopResource = resource; // real pixels — caller releases it
+                return true;
+            }
+
+            // Blank initial/no-present frame: release it and wait for a real one.
+            resource.Dispose();
+            duplication.ReleaseFrame();
         }
 
-        _logger.LogDebug("AcquireNextFrame timed out after {Retries} attempts", AcquireRetries);
-        desktopResource = null;
+        _logger.LogDebug("No presented frame within {Ms}ms (display may be static)", AcquireBudgetMs);
         return false;
     }
 
