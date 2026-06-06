@@ -15,6 +15,12 @@ public sealed class MacSettings
     public int PollingIntervalMs { get; set; } = 500;
     public int RelayPort { get; set; } = 5174;
 
+    /// <summary>Capture the real output display on each slide change (served at /api/screen-capture).</summary>
+    public bool ScreenCaptureEnabled { get; set; } = true;
+
+    /// <summary>1-based display to capture; 0 = auto-pick the non-primary display.</summary>
+    public int CaptureDisplayIndex { get; set; } = 0;
+
     public static MacSettings Load()
     {
         try
@@ -42,5 +48,7 @@ public sealed class MacSettings
         new("ProPresenter:Port", ProPresenterPort.ToString()),
         new("ProPresenter:PollingIntervalMs", PollingIntervalMs.ToString()),
         new("Relay:Port", RelayPort.ToString()),
+        new("ScreenCapture:Enabled", ScreenCaptureEnabled.ToString()),
+        new("ScreenCapture:DisplayIndex", CaptureDisplayIndex.ToString()),
     ];
 }

@@ -1,6 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
+  <!--
+    The macOS app only builds on macOS: net10.0-macos needs Apple tooling that
+    doesn't exist on Windows/Linux. To keep "Build Solution" / `dotnet build`
+    green cross-platform, on non-macOS hosts this project degrades to an empty
+    net10.0 stub (no sources, no ProjectReference) instead of failing the build.
+    On macOS it builds exactly as before.
+  -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
     <TargetFramework>net10.0-macos</TargetFramework>
     <SupportedOSPlatformVersion>13.0</SupportedOSPlatformVersion>
     <OutputType>Exe</OutputType>
@@ -11,7 +18,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
-  <ItemGroup>
+  <PropertyGroup Condition="!$([MSBuild]::IsOSPlatform('OSX'))">
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Stub: compile nothing so AppKit-dependent sources don't break the build. -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
     <ProjectReference Include="..\SlideProRelay.Server\SlideProRelay.Server.csproj" />
   </ItemGroup>
 

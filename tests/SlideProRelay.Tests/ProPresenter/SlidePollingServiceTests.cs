@@ -22,7 +22,7 @@ public sealed class SlidePollingServiceTests
         var client = new FakeProPresenterClient(expected);
         var cache = new SlideCache();
         var service = new SlidePollingService(
-            client, cache, BuildOptions(), NullLogger<SlidePollingService>.Instance);
+            client, cache, new SlideHistory(), BuildOptions(), NullLogger<SlidePollingService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var task = service.StartAsync(cts.Token);
@@ -51,7 +51,7 @@ public sealed class SlidePollingServiceTests
         var client = new FakeProPresenterClient(responses);
         var cache = new SlideCache();
         var service = new SlidePollingService(
-            client, cache, BuildOptions(intervalMs: 20), NullLogger<SlidePollingService>.Instance);
+            client, cache, new SlideHistory(), BuildOptions(intervalMs: 20), NullLogger<SlidePollingService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await service.StartAsync(cts.Token);
@@ -73,7 +73,7 @@ public sealed class SlidePollingServiceTests
         var client = new FakeProPresenterClient(unavailable);
         var cache = new SlideCache();
         var service = new SlidePollingService(
-            client, cache, BuildOptions(), NullLogger<SlidePollingService>.Instance);
+            client, cache, new SlideHistory(), BuildOptions(), NullLogger<SlidePollingService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
         await service.StartAsync(cts.Token);

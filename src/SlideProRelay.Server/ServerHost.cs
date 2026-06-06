@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Options;
 using QRCoder;
 using SlideProRelay.Server.ProPresenter;
 using SlideProRelay.Server.ProPresenter.Models;
+using SlideProRelay.Server.ScreenCapture;
 using SlideProRelay.Server.Startup;
 using System.Text.Json;
 
@@ -33,6 +35,9 @@ public static class ServerHost
         builder.Services.Configure<ProPresenterOptions>(
             builder.Configuration.GetSection(ProPresenterOptions.SectionName));
 
+        builder.Services.Configure<ScreenCaptureOptions>(
+            builder.Configuration.GetSection(ScreenCaptureOptions.SectionName));
+
         // Port auto-detection (reads ProPresenter's own persisted port). The base
         // URI is resolved dynamically per request via ProPresenterEndpoint, so the
         // relay follows ProPresenter's shifting port without a fixed BaseAddress.
@@ -51,7 +56,20 @@ public static class ServerHost
         });
 
         builder.Services.AddSingleton<SlideCache>();
+        builder.Services.AddSingleton<SlideHistory>();
         builder.Services.AddHostedService<SlidePollingService>();
+
+        // Screen capture: real output-display pixels, served from /api/screen-capture.
+        // Platform impl is selected at runtime, mirroring the port detector above.
+        // Windows uses the Null impl until the DXGI capture path lands.
+        builder.Services.AddSingleton<ScreenCaptureCache>();
+        builder.Services.AddSingleton<IScreenCaptureService>(sp =>
+            OperatingSystem.IsMacOS()
+                ? new MacScreenCaptureService(
+                    sp.GetRequiredService<IOptionsMonitor<ScreenCaptureOptions>>(),
+                    sp.GetRequiredService<ILogger<MacScreenCaptureService>>())
+                : new NullScreenCaptureService());
+        builder.Services.AddHostedService<ScreenCaptureCoordinator>();
 
         var app = builder.Build();
 
@@ -82,15 +100,27 @@ public static class ServerHost
                 : Results.File(bytes, "image/jpeg");
         });
 
-        app.MapGet("/api/current", (SlideCache cache) =>
+        // Full-screen JPEG of the real output display, captured on each slide
+        // change (see ScreenCaptureCoordinator). Separate from /api/slide-image,
+        // which is ProPresenter's rendered thumbnail. 204 when nothing has been
+        // captured yet, capture is disabled, or the platform isn't supported.
+        app.MapGet("/api/screen-capture", (ScreenCaptureCache cache) =>
+        {
+            var frame = cache.Latest;
+            return frame is null
+                ? Results.NoContent()
+                : Results.File(frame.Jpeg, "image/jpeg");
+        });
+
+        app.MapGet("/api/current", (SlideCache cache, SlideHistory history) =>
         {
             var status = cache.Latest;
             if (status is null)
                 return Results.Ok(new { connection = "starting", current = (object?)null, next = (object?)null });
-            return Results.Ok(BuildPayload(status));
+            return Results.Ok(BuildPayload(status, history));
         });
 
-        app.MapGet("/events", async (SlideCache cache, HttpContext ctx) =>
+        app.MapGet("/events", async (SlideCache cache, SlideHistory history, HttpContext ctx) =>
         {
             ctx.Response.Headers.ContentType = "text/event-stream";
             ctx.Response.Headers.CacheControl = "no-cache";
@@ -105,7 +135,7 @@ public static class ServerHost
                 });
 
             if (cache.Latest is { } latest)
-                await SendEvent(ctx.Response, latest, ct);
+                await SendEvent(ctx.Response, latest, history, ct);
 
             using var sub = cache.Subscribe(status => channel.Writer.TryWrite(status));
 
@@ -119,7 +149,7 @@ public static class ServerHost
             try
             {
                 await foreach (var status in channel.Reader.ReadAllAsync(ct))
-                    await SendEvent(ctx.Response, status, ct);
+                    await SendEvent(ctx.Response, status, history, ct);
             }
             catch (OperationCanceledException) { }
         });
@@ -140,18 +170,33 @@ public static class ServerHost
         app.MapGet("/", () => Results.Content(HtmlPage.Content, "text/html"));
     }
 
-    private static async Task SendEvent(HttpResponse response, SlideStatus status, CancellationToken ct)
+    private static async Task SendEvent(HttpResponse response, SlideStatus status, SlideHistory history, CancellationToken ct)
     {
-        var json = JsonSerializer.Serialize(BuildPayload(status), CamelCaseJson);
+        var json = JsonSerializer.Serialize(BuildPayload(status, history), CamelCaseJson);
         await response.WriteAsync($"data: {json}\n\n", ct);
         await response.Body.FlushAsync(ct);
     }
 
-    private static object BuildPayload(SlideStatus status) => new
+    private static object BuildPayload(SlideStatus status, SlideHistory history)
     {
-        connection = status.Connection.ToString().ToLowerInvariant(),
-        current = status.Current is null ? null : new { status.Current.Uuid, status.Current.Text, status.Current.Notes },
-        next = status.Next is null ? null : new { status.Next.Uuid, status.Next.Text, status.Next.Notes },
-        updatedAt = status.UpdatedAt,
-    };
+        // How many times the live slide has been shown — seenCount > 1 means it's
+        // a repeat (e.g. a chorus coming back around). Additive fields; existing
+        // clients simply ignore them.
+        var seenCount = history.SeenCount(status.Current?.Uuid);
+
+        return new
+        {
+            connection = status.Connection.ToString().ToLowerInvariant(),
+            current = status.Current is null ? null : new
+            {
+                status.Current.Uuid,
+                status.Current.Text,
+                status.Current.Notes,
+                seenCount,
+                isRepeat = seenCount > 1,
+            },
+            next = status.Next is null ? null : new { status.Next.Uuid, status.Next.Text, status.Next.Notes },
+            updatedAt = status.UpdatedAt,
+        };
+    }
 }

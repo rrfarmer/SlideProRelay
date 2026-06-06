@@ -10,17 +10,20 @@ public sealed class SlidePollingService : BackgroundService
 
     private readonly IProPresenterClient _client;
     private readonly SlideCache _cache;
+    private readonly SlideHistory _history;
     private readonly IOptionsMonitor<ProPresenterOptions> _opts;
     private readonly ILogger<SlidePollingService> _logger;
 
     public SlidePollingService(
         IProPresenterClient client,
         SlideCache cache,
+        SlideHistory history,
         IOptionsMonitor<ProPresenterOptions> opts,
         ILogger<SlidePollingService> logger)
     {
         _client = client;
         _cache = cache;
+        _history = history;
         _opts = opts;
         _logger = logger;
     }
@@ -38,6 +41,7 @@ public sealed class SlidePollingService : BackgroundService
             {
                 var status = await _client.GetCurrentSlideAsync(ct);
                 _cache.Update(status);
+                _history.Observe(status.Current?.Uuid);
 
                 if (status.Connection == ConnectionState.Connected)
                 {
