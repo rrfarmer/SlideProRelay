@@ -68,7 +68,11 @@ public static class ServerHost
                 ? new MacScreenCaptureService(
                     sp.GetRequiredService<IOptionsMonitor<ScreenCaptureOptions>>(),
                     sp.GetRequiredService<ILogger<MacScreenCaptureService>>())
-                : new NullScreenCaptureService());
+                : OperatingSystem.IsWindows()
+                    ? new WindowsScreenCaptureService(
+                        sp.GetRequiredService<IOptionsMonitor<ScreenCaptureOptions>>(),
+                        sp.GetRequiredService<ILogger<WindowsScreenCaptureService>>())
+                    : new NullScreenCaptureService());
         builder.Services.AddHostedService<ScreenCaptureCoordinator>();
 
         var app = builder.Build();
