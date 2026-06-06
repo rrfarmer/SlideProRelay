@@ -1,4 +1,5 @@
 using SlideProRelay.Server.Startup;
+using System.Text.Json;
 
 namespace SlideProRelay.Mac;
 
@@ -10,6 +11,9 @@ public sealed class SettingsPanel : NSPanel
     private readonly NSImageView _qrImageView;
     private readonly NSTextField _pro7PortField;
     private readonly NSTextField _relayPortField;
+    private readonly NSButton _captureCheckbox;
+    private readonly NSPopUpButton _displayPopup;
+    private List<int> _displayIndices = [0];
     private readonly NSTextField _saveMessage;
     private readonly Action<MacSettings> _onSave;
     private MacSettings _settings;
@@ -21,7 +25,7 @@ public sealed class SettingsPanel : NSPanel
 
     public SettingsPanel(MacSettings settings, Action<MacSettings> onSave)
         : base(
-            new CGRect(0, 0, 360, 524),
+            new CGRect(0, 0, 360, 604),
             NSWindowStyle.Titled | NSWindowStyle.Closable,
             NSBackingStore.Buffered,
             false)
@@ -40,22 +44,22 @@ public sealed class SettingsPanel : NSPanel
 
         // ── Status ────────────────────────────────────────────────────────────
 
-        v.AddSubview(SectionLabel("PROPRESENTER STATUS", new CGRect(x, 496, w, 14)));
+        v.AddSubview(SectionLabel("PROPRESENTER STATUS", new CGRect(x, 576, w, 14)));
 
-        _statusLabel = TextField("Not detected", new CGRect(x, 474, w, 18));
+        _statusLabel = TextField("Not detected", new CGRect(x, 554, w, 18));
         v.AddSubview(_statusLabel);
 
         // ── URLs ──────────────────────────────────────────────────────────────
 
-        v.AddSubview(SectionLabel("PHONE URL", new CGRect(x, 450, w, 14)));
+        v.AddSubview(SectionLabel("PHONE URL", new CGRect(x, 528, w, 14)));
 
-        _localUrlLabel = LinkField($"http://localhost:{settings.RelayPort}", new CGRect(x, 426, w, 18));
+        _localUrlLabel = LinkField($"http://localhost:{settings.RelayPort}", new CGRect(x, 504, w, 18));
         v.AddSubview(_localUrlLabel);
 
-        _networkUrlLabel = LinkField("Detecting…", new CGRect(x, 406, w, 18));
+        _networkUrlLabel = LinkField("Detecting…", new CGRect(x, 484, w, 18));
         v.AddSubview(_networkUrlLabel);
 
-        var openBtn = new NSButton(new CGRect(x, 376, 150, 22));
+        var openBtn = new NSButton(new CGRect(x, 454, 150, 22));
         openBtn.Title = "Open in Browser";
         openBtn.BezelStyle = NSBezelStyle.Rounded;
         openBtn.Activated += (_, _) =>
@@ -64,25 +68,36 @@ public sealed class SettingsPanel : NSPanel
         v.AddSubview(openBtn);
 
         // QR code — always visible, centered, scan to open the phone URL.
-        _qrImageView = new NSImageView(new CGRect(80, 166, 200, 200));
+        _qrImageView = new NSImageView(new CGRect(80, 244, 200, 200));
         _qrImageView.ImageScaling = NSImageScale.ProportionallyUpOrDown;
         v.AddSubview(_qrImageView);
 
         // ── Settings ──────────────────────────────────────────────────────────
 
-        v.AddSubview(SectionLabel("SETTINGS", new CGRect(x, 138, w, 14)));
+        v.AddSubview(SectionLabel("SETTINGS", new CGRect(x, 214, w, 14)));
 
-        v.AddSubview(BodyLabel("ProPresenter Port:", new CGRect(x, 112, 160, 18)));
-        _pro7PortField = EditableField(settings.ProPresenterPort.ToString(), new CGRect(190, 109, 80, 22));
+        v.AddSubview(BodyLabel("ProPresenter Port:", new CGRect(x, 188, 160, 18)));
+        _pro7PortField = EditableField(settings.ProPresenterPort.ToString(), new CGRect(190, 185, 80, 22));
         v.AddSubview(_pro7PortField);
 
-        v.AddSubview(BodyLabel("Relay Port (phone URL):", new CGRect(x, 84, 160, 18)));
-        _relayPortField = EditableField(settings.RelayPort.ToString(), new CGRect(190, 81, 80, 22));
+        v.AddSubview(BodyLabel("Relay Port (phone URL):", new CGRect(x, 160, 160, 18)));
+        _relayPortField = EditableField(settings.RelayPort.ToString(), new CGRect(190, 157, 80, 22));
         v.AddSubview(_relayPortField);
+
+        _captureCheckbox = new NSButton(new CGRect(x, 128, w, 20));
+        _captureCheckbox.SetButtonType(NSButtonType.Switch);
+        _captureCheckbox.Title = "Capture output screen on slide change";
+        _captureCheckbox.State = settings.ScreenCaptureEnabled ? NSCellStateValue.On : NSCellStateValue.Off;
+        v.AddSubview(_captureCheckbox);
+
+        v.AddSubview(SectionLabel("CAPTURE DISPLAY", new CGRect(x, 104, w, 14)));
+        _displayPopup = new NSPopUpButton(new CGRect(x, 76, w, 26), false);
+        _displayPopup.AddItem("Auto — match audience");
+        v.AddSubview(_displayPopup);
 
         // ── Save ──────────────────────────────────────────────────────────────
 
-        var saveBtn = new NSButton(new CGRect(x, 36, w, 32));
+        var saveBtn = new NSButton(new CGRect(x, 38, w, 32));
         saveBtn.Title = "Save & Restart";
         saveBtn.BezelStyle = NSBezelStyle.Rounded;
         saveBtn.KeyEquivalent = "\r";
@@ -94,8 +109,9 @@ public sealed class SettingsPanel : NSPanel
         _saveMessage.Font = NSFont.SystemFontOfSize(11);
         v.AddSubview(_saveMessage);
 
-        // Kick off the initial QR load so it appears without waiting for a tick.
+        // Kick off the initial QR + display loads so they appear without waiting.
         RefreshQr();
+        _ = LoadDisplaysAsync();
     }
 
     public void UpdateStatus(bool connected, IReadOnlyList<string> urls)
@@ -150,6 +166,53 @@ public sealed class SettingsPanel : NSPanel
         finally { _qrLoading = false; }
     }
 
+    // Fetch the capturable displays from the running relay so the user can pick
+    // which screen (e.g. ProPresenter's audience output) to capture.
+    private async Task LoadDisplaysAsync()
+    {
+        try
+        {
+            using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            var json = await client.GetStringAsync($"http://localhost:{_settings.RelayPort}/api/displays");
+            var (titles, indices) = ParseDisplays(json);
+
+            InvokeOnMainThread(() =>
+            {
+                _displayPopup.RemoveAllItems();
+                _displayPopup.AddItems([.. titles]);
+                _displayIndices = indices;
+
+                var sel = indices.IndexOf(_settings.CaptureDisplayIndex);
+                _displayPopup.SelectItem(sel >= 0 ? sel : 0);
+            });
+        }
+        catch { /* server not ready yet — the placeholder Auto item stays */ }
+    }
+
+    private static (List<string> Titles, List<int> Indices) ParseDisplays(string json)
+    {
+        var titles = new List<string> { "Auto — match audience" };
+        var indices = new List<int> { 0 };
+
+        using var doc = JsonDocument.Parse(json);
+        if (doc.RootElement.TryGetProperty("displays", out var arr) && arr.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var d in arr.EnumerateArray())
+            {
+                var idx = d.GetProperty("index").GetInt32();
+                var width = d.GetProperty("width").GetInt32();
+                var height = d.GetProperty("height").GetInt32();
+                var primary = d.GetProperty("isPrimary").GetBoolean();
+                var audience = d.TryGetProperty("matchesAudience", out var m) && m.GetBoolean();
+                var tag = primary ? " (primary)" : audience ? " (audience)" : "";
+                titles.Add($"Display {idx} — {width}×{height}{tag}");
+                indices.Add(idx);
+            }
+        }
+
+        return (titles, indices);
+    }
+
     private void OnSave(object? sender, EventArgs e)
     {
         if (int.TryParse(_pro7PortField.StringValue, out var pro7) && pro7 is > 0 and < 65536)
@@ -157,6 +220,11 @@ public sealed class SettingsPanel : NSPanel
 
         if (int.TryParse(_relayPortField.StringValue, out var relay) && relay is > 0 and < 65536)
             _settings.RelayPort = relay;
+
+        _settings.ScreenCaptureEnabled = _captureCheckbox.State == NSCellStateValue.On;
+
+        var sel = (int)_displayPopup.IndexOfSelectedItem;
+        _settings.CaptureDisplayIndex = sel >= 0 && sel < _displayIndices.Count ? _displayIndices[sel] : 0;
 
         _saveMessage.StringValue = "Restarting…";
         _onSave(_settings);

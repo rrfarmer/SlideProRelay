@@ -1,4 +1,6 @@
 using SlideProRelay.Server.Startup;
+using System.Net.Http;
+using System.Text.Json;
 
 namespace SlideProRelay.Tray;
 
@@ -11,6 +13,8 @@ internal sealed class StatusWindow : Form
     private readonly PictureBox _qrBox;
     private readonly NumericUpDown _portInput;
     private readonly NumericUpDown _relayPortInput;
+    private readonly CheckBox _captureEnabled;
+    private readonly ComboBox _displayCombo;
     private readonly Button _saveButton;
     private readonly Label _saveMsg;
     private readonly Action<TraySettings> _onSave;
@@ -23,7 +27,7 @@ internal sealed class StatusWindow : Form
         _onSave = onSave;
 
         Text = "SlideProRelay";
-        Size = new Size(360, 560);
+        Size = new Size(360, 660);
         MinimumSize = Size;
         MaximumSize = Size;
         FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -106,6 +110,30 @@ internal sealed class StatusWindow : Form
                 BackColor = Color.FromArgb(50, 50, 50),
                 ForeColor = Color.White,
             }));
+
+        _captureEnabled = new CheckBox
+        {
+            Text = "Capture output screen on slide change",
+            Checked = settings.ScreenCaptureEnabled,
+            AutoSize = true,
+            ForeColor = Color.White,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0, 10, 0, 0),
+        };
+        settingsGroup.Controls.Add(_captureEnabled);
+
+        _displayCombo = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Width = 160,
+            BackColor = Color.FromArgb(50, 50, 50),
+            ForeColor = Color.White,
+            FlatStyle = FlatStyle.Flat,
+        };
+        // Placeholder until /api/displays is queried when the window is shown.
+        _displayCombo.Items.Add(new DisplayChoice(0, "Auto — match audience"));
+        _displayCombo.SelectedIndex = 0;
+        settingsGroup.Controls.Add(FieldRow("Capture display:", _displayCombo));
 
         // ── Save ──────────────────────────────────────────────
         _saveButton = new Button
@@ -205,6 +233,8 @@ internal sealed class StatusWindow : Form
     {
         _settings.ProPresenterPort = (int)_portInput.Value;
         _settings.RelayPort = (int)_relayPortInput.Value;
+        _settings.ScreenCaptureEnabled = _captureEnabled.Checked;
+        _settings.CaptureDisplayIndex = (_displayCombo.SelectedItem as DisplayChoice)?.Index ?? 0;
 
         _saveButton.Enabled = false;
         _saveMsg.Text = "Restarting…";
@@ -223,6 +253,67 @@ internal sealed class StatusWindow : Form
             Hide();
         }
         base.OnFormClosing(e);
+    }
+
+    // Refresh the capture-display list each time the window opens (display
+    // topology may have changed since last time).
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        if (Visible)
+            _ = LoadDisplaysAsync((int)_relayPortInput.Value);
+    }
+
+    private async Task LoadDisplaysAsync(int relayPort)
+    {
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            var json = await client.GetStringAsync($"http://localhost:{relayPort}/api/displays");
+            if (IsDisposed) return;
+
+            var choices = ParseDisplayChoices(json);
+
+            void Apply()
+            {
+                _displayCombo.Items.Clear();
+                foreach (var c in choices)
+                    _displayCombo.Items.Add(c);
+
+                var match = choices.FirstOrDefault(c => c.Index == _settings.CaptureDisplayIndex) ?? choices[0];
+                _displayCombo.SelectedItem = match;
+            }
+
+            if (InvokeRequired) Invoke(Apply); else Apply();
+        }
+        catch { /* server not ready yet — keep the placeholder Auto item */ }
+    }
+
+    private static List<DisplayChoice> ParseDisplayChoices(string json)
+    {
+        var choices = new List<DisplayChoice> { new(0, "Auto — match audience") };
+
+        using var doc = JsonDocument.Parse(json);
+        if (doc.RootElement.TryGetProperty("displays", out var arr) && arr.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var d in arr.EnumerateArray())
+            {
+                var idx = d.GetProperty("index").GetInt32();
+                var w = d.GetProperty("width").GetInt32();
+                var h = d.GetProperty("height").GetInt32();
+                var primary = d.GetProperty("isPrimary").GetBoolean();
+                var audience = d.TryGetProperty("matchesAudience", out var m) && m.GetBoolean();
+                var tag = primary ? " (primary)" : audience ? " (audience)" : "";
+                choices.Add(new DisplayChoice(idx, $"Display {idx} — {w}×{h}{tag}"));
+            }
+        }
+
+        return choices;
+    }
+
+    private sealed record DisplayChoice(int Index, string Label)
+    {
+        public override string ToString() => Label;
     }
 
     private async Task LoadQrImageAsync(int relayPort)

@@ -15,6 +15,12 @@ internal sealed class TraySettings
     public int PollingIntervalMs { get; set; } = 500;
     public int RelayPort { get; set; } = 5174;
 
+    /// <summary>Capture the real output display on each slide change (served at /api/screen-capture).</summary>
+    public bool ScreenCaptureEnabled { get; set; } = true;
+
+    /// <summary>1-based display to capture; 0 = auto-match ProPresenter's audience screen.</summary>
+    public int CaptureDisplayIndex { get; set; } = 0;
+
     public static TraySettings Load()
     {
         try
@@ -42,5 +48,7 @@ internal sealed class TraySettings
         new("ProPresenter:Port", ProPresenterPort.ToString()),
         new("ProPresenter:PollingIntervalMs", PollingIntervalMs.ToString()),
         new("Relay:Port", RelayPort.ToString()),
+        new("ScreenCapture:Enabled", ScreenCaptureEnabled.ToString()),
+        new("ScreenCapture:DisplayIndex", CaptureDisplayIndex.ToString()),
     ];
 }
