@@ -17,6 +17,7 @@ namespace SlideProRelay.Server.ScreenCapture;
 public sealed class ScreenCaptureCoordinator : BackgroundService
 {
     private readonly SlideCache _slides;
+    private readonly IProPresenterClient _client;
     private readonly IScreenCaptureService _capture;
     private readonly ScreenCaptureCache _cache;
     private readonly IOptionsMonitor<ScreenCaptureOptions> _opts;
@@ -24,12 +25,14 @@ public sealed class ScreenCaptureCoordinator : BackgroundService
 
     public ScreenCaptureCoordinator(
         SlideCache slides,
+        IProPresenterClient client,
         IScreenCaptureService capture,
         ScreenCaptureCache cache,
         IOptionsMonitor<ScreenCaptureOptions> opts,
         ILogger<ScreenCaptureCoordinator> logger)
     {
         _slides = slides;
+        _client = client;
         _capture = capture;
         _cache = cache;
         _opts = opts;
@@ -88,7 +91,8 @@ public sealed class ScreenCaptureCoordinator : BackgroundService
         {
             await foreach (var key in signals.Reader.ReadAllAsync(ct))
             {
-                var jpeg = await _capture.CaptureAsync(ct);
+                var index = await ResolveDisplayIndexAsync(ct);
+                var jpeg = await _capture.CaptureAsync(index, ct);
                 if (jpeg is not null)
                     _cache.Set(jpeg, key);
                 else
@@ -98,6 +102,21 @@ public sealed class ScreenCaptureCoordinator : BackgroundService
         catch (OperationCanceledException) { }
 
         _logger.LogInformation("Screen capture stopped");
+    }
+
+    // Picks which display to capture: a manual ScreenCapture:DisplayIndex wins;
+    // otherwise auto-match ProPresenter's audience-screen resolution (skipping the
+    // ProPresenter call entirely when a manual index is set).
+    private async Task<int> ResolveDisplayIndexAsync(CancellationToken ct)
+    {
+        var configured = _opts.CurrentValue.DisplayIndex;
+        var displays = _capture.GetDisplays();
+
+        if (configured >= 1)
+            return DisplaySelector.Resolve(displays, configured, null, null);
+
+        var audience = await _client.GetAudienceScreenSizeAsync(ct);
+        return DisplaySelector.Resolve(displays, 0, audience?.Width, audience?.Height);
     }
 
     // Identity of the live slide — its uuid (or text as a fallback). Null when

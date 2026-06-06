@@ -14,4 +14,11 @@ public interface IProPresenterClient
     /// ProPresenter is unreachable. image/jpeg.
     /// </summary>
     Task<byte[]?> GetCurrentSlideImageAsync(int quality, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the resolution of ProPresenter's audience output screen (from
+    /// /v1/status/screens), used to auto-match which physical display to capture.
+    /// Null when unreachable or no audience screen is configured.
+    /// </summary>
+    Task<(int Width, int Height)?> GetAudienceScreenSizeAsync(CancellationToken ct = default);
 }

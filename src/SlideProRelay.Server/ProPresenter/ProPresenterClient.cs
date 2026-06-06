@@ -130,6 +130,40 @@ public sealed class ProPresenterClient : IProPresenterClient
         }
     }
 
+    public async Task<(int Width, int Height)?> GetAudienceScreenSizeAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            using var resp = await _http.GetAsync(_endpoint.Url("/v1/status/screens"), ct);
+            if (!resp.IsSuccessStatusCode)
+                return null;
+
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                return null;
+
+            // [{ "screen_type":"audience", "size":{"width":W,"height":H}, ... }, ...]
+            foreach (var screen in doc.RootElement.EnumerateArray())
+            {
+                if (screen.TryGetProperty("screen_type", out var type) &&
+                    type.GetString() == "audience" &&
+                    screen.TryGetProperty("size", out var size) &&
+                    size.TryGetProperty("width", out var w) &&
+                    size.TryGetProperty("height", out var h))
+                {
+                    return (w.GetInt32(), h.GetInt32());
+                }
+            }
+
+            return null;
+        }
+        catch (Exception ex) when (IsConnectionFailure(ex) || ex is JsonException)
+        {
+            _logger.LogDebug("Audience screen lookup failed: {Message}", ex.Message);
+            return null;
+        }
+    }
+
     private static SlideInfo? ToSlideInfo(ProPresenterSlideEntry? entry)
     {
         if (entry is null) return null;

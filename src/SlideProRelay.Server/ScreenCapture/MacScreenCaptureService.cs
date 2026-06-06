@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -10,26 +9,55 @@ namespace SlideProRelay.Server.ScreenCapture;
 /// tool (no extra dependencies; it handles JPEG encoding and the TCC permission
 /// flow). The first capture triggers the system "Screen Recording" permission
 /// prompt — until it's granted, macOS returns a desktop-only/black image.
+/// Displays are enumerated via CoreGraphics.
 /// </summary>
 [SupportedOSPlatform("macos")]
 public sealed class MacScreenCaptureService : IScreenCaptureService
 {
-    private readonly IOptionsMonitor<ScreenCaptureOptions> _opts;
+    private const string CoreGraphics =
+        "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics";
+
     private readonly ILogger<MacScreenCaptureService> _logger;
 
-    public MacScreenCaptureService(
-        IOptionsMonitor<ScreenCaptureOptions> opts,
-        ILogger<MacScreenCaptureService> logger)
-    {
-        _opts = opts;
-        _logger = logger;
-    }
+    public MacScreenCaptureService(ILogger<MacScreenCaptureService> logger) => _logger = logger;
 
     public bool IsSupported => true;
 
-    public async Task<byte[]?> CaptureAsync(CancellationToken ct = default)
+    public IReadOnlyList<CaptureDisplay> GetDisplays()
     {
-        var display = ResolveDisplayIndex(_opts.CurrentValue.DisplayIndex);
+        try
+        {
+            if (CGGetActiveDisplayList(0, null, out var count) != 0 || count == 0)
+                return [];
+
+            var ids = new uint[count];
+            if (CGGetActiveDisplayList(count, ids, out count) != 0)
+                return [];
+
+            var main = CGMainDisplayID();
+            var displays = new List<CaptureDisplay>((int)count);
+            for (var i = 0; i < count; i++)
+            {
+                var b = CGDisplayBounds(ids[i]);
+                // screencapture -D is 1-based and ordered like the active display
+                // list (main first), so index i+1 maps to `-D (i+1)`.
+                displays.Add(new CaptureDisplay(
+                    i + 1, (int)b.Size.Width, (int)b.Size.Height, (int)b.Origin.X, (int)b.Origin.Y,
+                    IsPrimary: ids[i] == main));
+            }
+
+            return displays;
+        }
+        catch (DllNotFoundException ex)
+        {
+            _logger.LogDebug("Display enumeration unavailable: {Message}", ex.Message);
+            return [];
+        }
+    }
+
+    public async Task<byte[]?> CaptureAsync(int displayIndex, CancellationToken ct = default)
+    {
+        var display = ResolveDisplayIndex(displayIndex);
         var tmp = Path.Combine(Path.GetTempPath(), $"spr-capture-{Guid.NewGuid():N}.jpg");
 
         try
@@ -76,32 +104,34 @@ public sealed class MacScreenCaptureService : IScreenCaptureService
         }
     }
 
-    // 0 = auto: with more than one display attached, grab the first non-primary
-    // (index 2 — usually the ProPresenter output); otherwise the main display.
-    // Any explicit value is used verbatim.
-    private int ResolveDisplayIndex(int configured)
+    // <= 0 means "service default": the first non-primary display, else display 1.
+    private int ResolveDisplayIndex(int requested)
     {
-        if (configured > 0)
-            return configured;
+        if (requested >= 1)
+            return requested;
 
-        try
-        {
-            return ActiveDisplayCount() >= 2 ? 2 : 1;
-        }
-        catch (DllNotFoundException)
-        {
-            return 1;
-        }
+        var displays = GetDisplays();
+        var firstNonPrimary = displays.FirstOrDefault(d => !d.IsPrimary);
+        return firstNonPrimary?.Index ?? 1;
     }
 
-    private static uint ActiveDisplayCount()
-    {
-        // Passing a null list with maxDisplays 0 returns just the count.
-        _ = CGGetActiveDisplayList(0, null, out var count);
-        return count;
-    }
+    // ── CoreGraphics interop ────────────────────────────────────────────────
 
-    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
-    private static extern int CGGetActiveDisplayList(
-        uint maxDisplays, uint[]? activeDisplays, out uint displayCount);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CGPoint { public double X; public double Y; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CGSize { public double Width; public double Height; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CGRect { public CGPoint Origin; public CGSize Size; }
+
+    [DllImport(CoreGraphics)]
+    private static extern int CGGetActiveDisplayList(uint maxDisplays, uint[]? activeDisplays, out uint displayCount);
+
+    [DllImport(CoreGraphics)]
+    private static extern uint CGMainDisplayID();
+
+    [DllImport(CoreGraphics)]
+    private static extern CGRect CGDisplayBounds(uint display);
 }

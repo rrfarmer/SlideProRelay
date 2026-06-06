@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
@@ -28,46 +27,118 @@ public sealed class WindowsScreenCaptureService : IScreenCaptureService
     private const int AcquireBudgetMs = 2000;       // overall budget to land a real frame
     private const long JpegQuality = 85L;
 
-    private readonly IOptionsMonitor<ScreenCaptureOptions> _opts;
     private readonly ILogger<WindowsScreenCaptureService> _logger;
 
-    public WindowsScreenCaptureService(
-        IOptionsMonitor<ScreenCaptureOptions> opts,
-        ILogger<WindowsScreenCaptureService> logger)
-    {
-        _opts = opts;
-        _logger = logger;
-    }
+    public WindowsScreenCaptureService(ILogger<WindowsScreenCaptureService> logger) => _logger = logger;
 
     public bool IsSupported => true;
 
-    public Task<byte[]?> CaptureAsync(CancellationToken ct = default) =>
-        // Desktop Duplication is entirely synchronous COM; keep it off the caller.
-        Task.Run(() => Capture(), ct);
-
-    private byte[]? Capture()
+    public IReadOnlyList<CaptureDisplay> GetDisplays()
     {
         try
         {
             using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
+            var displays = new List<CaptureDisplay>();
+            var index = 1;
 
-            var (adapter, output) = SelectOutput(factory, _opts.CurrentValue.DisplayIndex);
-            if (adapter is null || output is null)
+            for (uint a = 0; factory.EnumAdapters1(a, out var adapter).Success; a++)
             {
-                _logger.LogDebug("No capturable display found");
+                using (adapter)
+                {
+                    for (uint o = 0; adapter.EnumOutputs(o, out var output).Success; o++)
+                    {
+                        using (output)
+                        {
+                            var d = output.Description;
+                            if (!d.AttachedToDesktop)
+                                continue;
+
+                            var r = d.DesktopCoordinates;
+                            displays.Add(new CaptureDisplay(
+                                index++, r.Right - r.Left, r.Bottom - r.Top, r.Left, r.Top,
+                                IsPrimary: r.Left == 0 && r.Top == 0));
+                        }
+                    }
+                }
+            }
+
+            return displays;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug("Display enumeration failed: {Message}", ex.Message);
+            return [];
+        }
+    }
+
+    public Task<byte[]?> CaptureAsync(int displayIndex, CancellationToken ct = default) =>
+        // Desktop Duplication is entirely synchronous COM; keep it off the caller.
+        Task.Run(() => Capture(displayIndex), ct);
+
+    private byte[]? Capture(int displayIndex)
+    {
+        // Enumerate with live COM handles so we can keep the chosen one and capture it.
+        var attached = new List<(IDXGIAdapter1 Adapter, IDXGIOutput Output, bool IsPrimary)>();
+        try
+        {
+            using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
+            for (uint a = 0; factory.EnumAdapters1(a, out var adapter).Success; a++)
+            {
+                var keepAdapter = false;
+                for (uint o = 0; adapter.EnumOutputs(o, out var output).Success; o++)
+                {
+                    var d = output.Description;
+                    if (d.AttachedToDesktop)
+                    {
+                        var r = d.DesktopCoordinates;
+                        attached.Add((adapter, output, r.Left == 0 && r.Top == 0));
+                        keepAdapter = true;
+                    }
+                    else
+                    {
+                        output.Dispose();
+                    }
+                }
+
+                if (!keepAdapter)
+                    adapter.Dispose();
+            }
+
+            if (attached.Count == 0)
+            {
+                _logger.LogDebug("No attached displays to capture");
                 return null;
             }
 
-            using (adapter)
-            using (output)
+            int chosen;
+            if (displayIndex >= 1 && displayIndex <= attached.Count)
             {
-                return CaptureOutput(adapter, output);
+                chosen = displayIndex - 1;
             }
+            else
+            {
+                var firstNonPrimary = attached.FindIndex(x => !x.IsPrimary);
+                chosen = firstNonPrimary >= 0 ? firstNonPrimary : 0;
+            }
+
+            return CaptureOutput(attached[chosen].Adapter, attached[chosen].Output);
         }
         catch (Exception ex)
         {
             _logger.LogDebug("Screen capture failed: {Message}", ex.Message);
             return null;
+        }
+        finally
+        {
+            // Dispose every output, and each distinct adapter exactly once.
+            var adapters = new HashSet<IDXGIAdapter1>();
+            foreach (var (adapter, output, _) in attached)
+            {
+                output.Dispose();
+                adapters.Add(adapter);
+            }
+            foreach (var adapter in adapters)
+                adapter.Dispose();
         }
     }
 
@@ -199,61 +270,6 @@ public sealed class WindowsScreenCaptureService : IScreenCaptureService
         using var ms = new MemoryStream();
         bitmap.Save(ms, JpegEncoder.Value, JpegParams.Value);
         return ms.ToArray();
-    }
-
-    // 0 = auto: pick the first non-primary attached output (usually the
-    // ProPresenter projector), else the primary. A positive value selects the
-    // Nth attached output (1-based) in enumeration order.
-    private (IDXGIAdapter1?, IDXGIOutput?) SelectOutput(IDXGIFactory1 factory, int displayIndex)
-    {
-        var attached = new List<(IDXGIAdapter1 Adapter, IDXGIOutput Output, bool IsPrimary)>();
-
-        for (uint a = 0; factory.EnumAdapters1(a, out var adapter).Success; a++)
-        {
-            var keepAdapter = false;
-            for (uint o = 0; adapter.EnumOutputs(o, out var output).Success; o++)
-            {
-                var od = output.Description;
-                if (od.AttachedToDesktop)
-                {
-                    var rect = od.DesktopCoordinates;
-                    var isPrimary = rect.Left == 0 && rect.Top == 0;
-                    attached.Add((adapter, output, isPrimary));
-                    keepAdapter = true;
-                }
-                else
-                {
-                    output.Dispose();
-                }
-            }
-
-            if (!keepAdapter)
-                adapter.Dispose();
-        }
-
-        if (attached.Count == 0)
-            return (null, null);
-
-        int chosen;
-        if (displayIndex > 0)
-            chosen = Math.Min(displayIndex - 1, attached.Count - 1);
-        else
-        {
-            var firstNonPrimary = attached.FindIndex(x => !x.IsPrimary);
-            chosen = firstNonPrimary >= 0 ? firstNonPrimary : 0;
-        }
-
-        // Dispose the outputs/adapters we aren't using.
-        for (var i = 0; i < attached.Count; i++)
-        {
-            if (i == chosen)
-                continue;
-            attached[i].Output.Dispose();
-            if (!ReferenceEquals(attached[i].Adapter, attached[chosen].Adapter))
-                attached[i].Adapter.Dispose();
-        }
-
-        return (attached[chosen].Adapter, attached[chosen].Output);
     }
 
     private static readonly Lazy<ImageCodecInfo> JpegEncoder = new(() =>

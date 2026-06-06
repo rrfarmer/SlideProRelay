@@ -65,13 +65,9 @@ public static class ServerHost
         builder.Services.AddSingleton<ScreenCaptureCache>();
         builder.Services.AddSingleton<IScreenCaptureService>(sp =>
             OperatingSystem.IsMacOS()
-                ? new MacScreenCaptureService(
-                    sp.GetRequiredService<IOptionsMonitor<ScreenCaptureOptions>>(),
-                    sp.GetRequiredService<ILogger<MacScreenCaptureService>>())
+                ? new MacScreenCaptureService(sp.GetRequiredService<ILogger<MacScreenCaptureService>>())
                 : OperatingSystem.IsWindows()
-                    ? new WindowsScreenCaptureService(
-                        sp.GetRequiredService<IOptionsMonitor<ScreenCaptureOptions>>(),
-                        sp.GetRequiredService<ILogger<WindowsScreenCaptureService>>())
+                    ? new WindowsScreenCaptureService(sp.GetRequiredService<ILogger<WindowsScreenCaptureService>>())
                     : new NullScreenCaptureService());
         builder.Services.AddHostedService<ScreenCaptureCoordinator>();
 
@@ -114,6 +110,40 @@ public static class ServerHost
             return frame is null
                 ? Results.NoContent()
                 : Results.File(frame.Jpeg, "image/jpeg");
+        });
+
+        // Lists capturable displays + ProPresenter's audience-screen size and which
+        // display the relay would capture. Powers the tray "Capture display" picker
+        // and is a handy diagnostic for multi-monitor setups.
+        app.MapGet("/api/displays", async (
+            IScreenCaptureService capture,
+            IProPresenterClient client,
+            IOptionsMonitor<ScreenCaptureOptions> opts,
+            CancellationToken ct) =>
+        {
+            var displays = capture.GetDisplays();
+            var audience = await client.GetAudienceScreenSizeAsync(ct);
+            var configured = opts.CurrentValue.DisplayIndex;
+            var selected = DisplaySelector.Resolve(displays, configured, audience?.Width, audience?.Height);
+
+            return Results.Ok(new
+            {
+                supported = capture.IsSupported,
+                configuredIndex = configured, // 0 = auto
+                selectedIndex = selected,
+                audience = audience is null ? null : new { audience.Value.Width, audience.Value.Height },
+                displays = displays.Select(d => new
+                {
+                    d.Index,
+                    d.Width,
+                    d.Height,
+                    d.X,
+                    d.Y,
+                    d.IsPrimary,
+                    matchesAudience = audience is not null && !d.IsPrimary
+                        && d.Width == audience.Value.Width && d.Height == audience.Value.Height,
+                }),
+            });
         });
 
         app.MapGet("/api/current", (SlideCache cache, SlideHistory history) =>
