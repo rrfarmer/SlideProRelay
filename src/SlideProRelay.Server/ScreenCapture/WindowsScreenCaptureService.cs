@@ -26,6 +26,7 @@ public sealed class WindowsScreenCaptureService : IScreenCaptureService
     private const int AcquireTimeoutMs = 200;       // per-AcquireNextFrame wait
     private const int AcquireBudgetMs = 2000;       // overall budget to land a real frame
     private const long JpegQuality = 85L;
+    private const int MaxUploadWidth = 1920;        // matches SlidePro server-side cap
 
     private readonly ILogger<WindowsScreenCaptureService> _logger;
 
@@ -267,9 +268,24 @@ public sealed class WindowsScreenCaptureService : IScreenCaptureService
             bitmap.UnlockBits(bmpData);
         }
 
-        using var ms = new MemoryStream();
-        bitmap.Save(ms, JpegEncoder.Value, JpegParams.Value);
-        return ms.ToArray();
+        Bitmap toEncode = bitmap;
+        if (width > MaxUploadWidth)
+        {
+            var scale = (double)MaxUploadWidth / width;
+            toEncode = new Bitmap(bitmap, MaxUploadWidth, (int)(height * scale));
+        }
+
+        try
+        {
+            using var ms = new MemoryStream();
+            toEncode.Save(ms, JpegEncoder.Value, JpegParams.Value);
+            return ms.ToArray();
+        }
+        finally
+        {
+            if (!ReferenceEquals(toEncode, bitmap))
+                toEncode.Dispose();
+        }
     }
 
     private static readonly Lazy<ImageCodecInfo> JpegEncoder = new(() =>

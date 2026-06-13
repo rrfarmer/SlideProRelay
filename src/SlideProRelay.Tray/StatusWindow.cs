@@ -15,6 +15,10 @@ internal sealed class StatusWindow : Form
     private readonly NumericUpDown _relayPortInput;
     private readonly CheckBox _captureEnabled;
     private readonly ComboBox _displayCombo;
+    private readonly CheckBox _slideProEnabled;
+    private readonly TextBox _apiKeyInput;
+    private readonly ComboBox _presentationCombo;
+    private readonly Button _refreshPresentationsButton;
     private readonly Button _saveButton;
     private readonly Label _saveMsg;
     private readonly Action<TraySettings> _onSave;
@@ -27,7 +31,7 @@ internal sealed class StatusWindow : Form
         _onSave = onSave;
 
         Text = "SlideProRelay";
-        Size = new Size(360, 660);
+        Size = new Size(360, 800);
         MinimumSize = Size;
         MaximumSize = Size;
         FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -135,6 +139,72 @@ internal sealed class StatusWindow : Form
         _displayCombo.SelectedIndex = 0;
         settingsGroup.Controls.Add(FieldRow("Capture display:", _displayCombo));
 
+        // ── SlidePro ──────────────────────────────────────────
+        var slideProGroup = Section("SlidePro.io Relay", 12);
+
+        _slideProEnabled = new CheckBox
+        {
+            Text = "Relay to SlidePro.io on slide change",
+            Checked = settings.SlideProEnabled,
+            AutoSize = true,
+            ForeColor = Color.White,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0, 4, 0, 0),
+        };
+        slideProGroup.Controls.Add(_slideProEnabled);
+
+        _apiKeyInput = new TextBox
+        {
+            Text = settings.SlideProApiKey,
+            Width = 220,
+            BackColor = Color.FromArgb(50, 50, 50),
+            ForeColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle,
+        };
+        slideProGroup.Controls.Add(FieldRow("API Key:", _apiKeyInput));
+
+        var presentationRow = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            Margin = new Padding(0, 4, 0, 0),
+            BackColor = Color.Transparent,
+        };
+        presentationRow.Controls.Add(new Label
+        {
+            Text = "Presentation:",
+            AutoSize = false,
+            Width = 180,
+            TextAlign = ContentAlignment.MiddleLeft,
+        });
+        _presentationCombo = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Width = 160,
+            BackColor = Color.FromArgb(50, 50, 50),
+            ForeColor = Color.White,
+            FlatStyle = FlatStyle.Flat,
+        };
+        _presentationCombo.Items.Add(new PresentationChoice("", "— click Refresh —"));
+        _presentationCombo.SelectedIndex = 0;
+        presentationRow.Controls.Add(_presentationCombo);
+
+        _refreshPresentationsButton = new Button
+        {
+            Text = "Refresh",
+            Width = 65,
+            Height = 23,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(60, 60, 60),
+            ForeColor = Color.White,
+            Cursor = Cursors.Hand,
+            Margin = new Padding(4, 0, 0, 0),
+        };
+        _refreshPresentationsButton.FlatAppearance.BorderColor = Color.FromArgb(80, 80, 80);
+        _refreshPresentationsButton.Click += (_, _) => _ = LoadPresentationsAsync();
+        presentationRow.Controls.Add(_refreshPresentationsButton);
+        slideProGroup.Controls.Add(presentationRow);
+
         // ── Save ──────────────────────────────────────────────
         _saveButton = new Button
         {
@@ -163,10 +233,11 @@ internal sealed class StatusWindow : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 5,
+            RowCount = 6,
             Padding = new Padding(16),
             BackColor = Color.FromArgb(30, 30, 30),
         };
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -176,6 +247,7 @@ internal sealed class StatusWindow : Form
         root.Controls.Add(statusGroup);
         root.Controls.Add(urlGroup);
         root.Controls.Add(settingsGroup);
+        root.Controls.Add(slideProGroup);
         root.Controls.Add(_saveButton);
         root.Controls.Add(_saveMsg);
 
@@ -235,6 +307,9 @@ internal sealed class StatusWindow : Form
         _settings.RelayPort = (int)_relayPortInput.Value;
         _settings.ScreenCaptureEnabled = _captureEnabled.Checked;
         _settings.CaptureDisplayIndex = (_displayCombo.SelectedItem as DisplayChoice)?.Index ?? 0;
+        _settings.SlideProEnabled = _slideProEnabled.Checked;
+        _settings.SlideProApiKey = _apiKeyInput.Text.Trim();
+        _settings.SlideProPresentationId = (_presentationCombo.SelectedItem as PresentationChoice)?.Id ?? "";
 
         _saveButton.Enabled = false;
         _saveMsg.Text = "Restarting…";
@@ -261,7 +336,11 @@ internal sealed class StatusWindow : Form
     {
         base.OnVisibleChanged(e);
         if (Visible)
+        {
             _ = LoadDisplaysAsync((int)_relayPortInput.Value);
+            if (!string.IsNullOrEmpty(_settings.SlideProApiKey))
+                _ = LoadPresentationsAsync();
+        }
     }
 
     private async Task LoadDisplaysAsync(int relayPort)
@@ -289,6 +368,55 @@ internal sealed class StatusWindow : Form
         catch { /* server not ready yet — keep the placeholder Auto item */ }
     }
 
+    private async Task LoadPresentationsAsync()
+    {
+        var apiKey = _apiKeyInput.Text.Trim();
+        if (string.IsNullOrEmpty(apiKey)) return;
+
+        var relayPort = (int)_relayPortInput.Value;
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            var url = $"http://localhost:{relayPort}/api/slidepro/presentations?apiKey={Uri.EscapeDataString(apiKey)}";
+            var json = await client.GetStringAsync(url);
+            if (IsDisposed) return;
+
+            var choices = ParsePresentationChoices(json);
+
+            void Apply()
+            {
+                _presentationCombo.Items.Clear();
+                foreach (var c in choices)
+                    _presentationCombo.Items.Add(c);
+
+                if (choices.Count > 0)
+                {
+                    var match = choices.FirstOrDefault(c => c.Id == _settings.SlideProPresentationId) ?? choices[0];
+                    _presentationCombo.SelectedItem = match;
+                }
+            }
+
+            if (InvokeRequired) Invoke(Apply); else Apply();
+        }
+        catch { /* server not ready or bad key — leave placeholder */ }
+    }
+
+    private static List<PresentationChoice> ParsePresentationChoices(string json)
+    {
+        var choices = new List<PresentationChoice>();
+        using var doc = JsonDocument.Parse(json);
+        if (doc.RootElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var p in doc.RootElement.EnumerateArray())
+            {
+                var id = p.GetProperty("presentationId").GetString() ?? "";
+                var title = p.TryGetProperty("title", out var t) ? t.GetString() ?? id : id;
+                choices.Add(new PresentationChoice(id, title));
+            }
+        }
+        return choices;
+    }
+
     private static List<DisplayChoice> ParseDisplayChoices(string json)
     {
         var choices = new List<DisplayChoice> { new(0, "Auto — match audience") };
@@ -314,6 +442,11 @@ internal sealed class StatusWindow : Form
     private sealed record DisplayChoice(int Index, string Label)
     {
         public override string ToString() => Label;
+    }
+
+    private sealed record PresentationChoice(string Id, string Title)
+    {
+        public override string ToString() => Title;
     }
 
     private async Task LoadQrImageAsync(int relayPort)

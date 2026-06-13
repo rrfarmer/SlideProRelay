@@ -21,6 +21,15 @@ public sealed class MacSettings
     /// <summary>1-based display to capture; 0 = auto-pick the non-primary display.</summary>
     public int CaptureDisplayIndex { get; set; } = 0;
 
+    /// <summary>Whether to relay screen captures to SlidePro.io on each slide change.</summary>
+    public bool SlideProEnabled { get; set; } = false;
+
+    /// <summary>SlidePro API key — entered by the user in tray settings, never in appsettings.</summary>
+    public string SlideProApiKey { get; set; } = "";
+
+    /// <summary>Target presentation GUID selected by the user from their SlidePro account.</summary>
+    public string SlideProPresentationId { get; set; } = "";
+
     public static MacSettings Load()
     {
         try
@@ -50,5 +59,8 @@ public sealed class MacSettings
         new("Relay:Port", RelayPort.ToString()),
         new("ScreenCapture:Enabled", ScreenCaptureEnabled.ToString()),
         new("ScreenCapture:DisplayIndex", CaptureDisplayIndex.ToString()),
+        new("SlidePro:Enabled", SlideProEnabled.ToString()),
+        new("SlidePro:ApiKey", SlideProApiKey),
+        new("SlidePro:PresentationId", SlideProPresentationId),
     ];
 }

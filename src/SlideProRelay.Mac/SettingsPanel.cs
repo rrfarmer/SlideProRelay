@@ -14,6 +14,10 @@ public sealed class SettingsPanel : NSPanel
     private readonly NSButton _captureCheckbox;
     private readonly NSPopUpButton _displayPopup;
     private List<int> _displayIndices = [0];
+    private readonly NSButton _slideProCheckbox;
+    private readonly NSTextField _apiKeyField;
+    private readonly NSPopUpButton _presentationPopup;
+    private List<string> _presentationIds = [""];
     private readonly NSTextField _saveMessage;
     private readonly Action<MacSettings> _onSave;
     private MacSettings _settings;
@@ -25,7 +29,7 @@ public sealed class SettingsPanel : NSPanel
 
     public SettingsPanel(MacSettings settings, Action<MacSettings> onSave)
         : base(
-            new CGRect(0, 0, 360, 604),
+            new CGRect(0, 0, 360, 744),
             NSWindowStyle.Titled | NSWindowStyle.Closable,
             NSBackingStore.Buffered,
             false)
@@ -44,22 +48,22 @@ public sealed class SettingsPanel : NSPanel
 
         // ── Status ────────────────────────────────────────────────────────────
 
-        v.AddSubview(SectionLabel("PROPRESENTER STATUS", new CGRect(x, 576, w, 14)));
+        v.AddSubview(SectionLabel("PROPRESENTER STATUS", new CGRect(x, 716, w, 14)));
 
-        _statusLabel = TextField("Not detected", new CGRect(x, 554, w, 18));
+        _statusLabel = TextField("Not detected", new CGRect(x, 694, w, 18));
         v.AddSubview(_statusLabel);
 
         // ── URLs ──────────────────────────────────────────────────────────────
 
-        v.AddSubview(SectionLabel("PHONE URL", new CGRect(x, 528, w, 14)));
+        v.AddSubview(SectionLabel("PHONE URL", new CGRect(x, 668, w, 14)));
 
-        _localUrlLabel = LinkField($"http://localhost:{settings.RelayPort}", new CGRect(x, 504, w, 18));
+        _localUrlLabel = LinkField($"http://localhost:{settings.RelayPort}", new CGRect(x, 644, w, 18));
         v.AddSubview(_localUrlLabel);
 
-        _networkUrlLabel = LinkField("Detecting…", new CGRect(x, 484, w, 18));
+        _networkUrlLabel = LinkField("Detecting…", new CGRect(x, 624, w, 18));
         v.AddSubview(_networkUrlLabel);
 
-        var openBtn = new NSButton(new CGRect(x, 454, 150, 22));
+        var openBtn = new NSButton(new CGRect(x, 594, 150, 22));
         openBtn.Title = "Open in Browser";
         openBtn.BezelStyle = NSBezelStyle.Rounded;
         openBtn.Activated += (_, _) =>
@@ -68,32 +72,57 @@ public sealed class SettingsPanel : NSPanel
         v.AddSubview(openBtn);
 
         // QR code — always visible, centered, scan to open the phone URL.
-        _qrImageView = new NSImageView(new CGRect(80, 244, 200, 200));
+        _qrImageView = new NSImageView(new CGRect(80, 384, 200, 200));
         _qrImageView.ImageScaling = NSImageScale.ProportionallyUpOrDown;
         v.AddSubview(_qrImageView);
 
         // ── Settings ──────────────────────────────────────────────────────────
 
-        v.AddSubview(SectionLabel("SETTINGS", new CGRect(x, 214, w, 14)));
+        v.AddSubview(SectionLabel("SETTINGS", new CGRect(x, 354, w, 14)));
 
-        v.AddSubview(BodyLabel("ProPresenter Port:", new CGRect(x, 188, 160, 18)));
-        _pro7PortField = EditableField(settings.ProPresenterPort.ToString(), new CGRect(190, 185, 80, 22));
+        v.AddSubview(BodyLabel("ProPresenter Port:", new CGRect(x, 328, 160, 18)));
+        _pro7PortField = EditableField(settings.ProPresenterPort.ToString(), new CGRect(190, 325, 80, 22));
         v.AddSubview(_pro7PortField);
 
-        v.AddSubview(BodyLabel("Relay Port (phone URL):", new CGRect(x, 160, 160, 18)));
-        _relayPortField = EditableField(settings.RelayPort.ToString(), new CGRect(190, 157, 80, 22));
+        v.AddSubview(BodyLabel("Relay Port (phone URL):", new CGRect(x, 300, 160, 18)));
+        _relayPortField = EditableField(settings.RelayPort.ToString(), new CGRect(190, 297, 80, 22));
         v.AddSubview(_relayPortField);
 
-        _captureCheckbox = new NSButton(new CGRect(x, 128, w, 20));
+        _captureCheckbox = new NSButton(new CGRect(x, 268, w, 20));
         _captureCheckbox.SetButtonType(NSButtonType.Switch);
         _captureCheckbox.Title = "Capture output screen on slide change";
         _captureCheckbox.State = settings.ScreenCaptureEnabled ? NSCellStateValue.On : NSCellStateValue.Off;
         v.AddSubview(_captureCheckbox);
 
-        v.AddSubview(SectionLabel("CAPTURE DISPLAY", new CGRect(x, 104, w, 14)));
-        _displayPopup = new NSPopUpButton(new CGRect(x, 76, w, 26), false);
+        v.AddSubview(SectionLabel("CAPTURE DISPLAY", new CGRect(x, 244, w, 14)));
+        _displayPopup = new NSPopUpButton(new CGRect(x, 216, w, 26), false);
         _displayPopup.AddItem("Auto — match audience");
         v.AddSubview(_displayPopup);
+
+        // ── SlidePro ──────────────────────────────────────────────────────────
+
+        v.AddSubview(SectionLabel("SLIDEPRO.IO RELAY", new CGRect(x, 184, w, 14)));
+
+        _slideProCheckbox = new NSButton(new CGRect(x, 158, w, 20));
+        _slideProCheckbox.SetButtonType(NSButtonType.Switch);
+        _slideProCheckbox.Title = "Relay to SlidePro.io on slide change";
+        _slideProCheckbox.State = settings.SlideProEnabled ? NSCellStateValue.On : NSCellStateValue.Off;
+        v.AddSubview(_slideProCheckbox);
+
+        v.AddSubview(BodyLabel("API Key:", new CGRect(x, 132, 80, 18)));
+        _apiKeyField = EditableField(settings.SlideProApiKey, new CGRect(100, 129, 220, 22));
+        v.AddSubview(_apiKeyField);
+
+        v.AddSubview(SectionLabel("PRESENTATION", new CGRect(x, 104, 120, 14)));
+        _presentationPopup = new NSPopUpButton(new CGRect(x, 76, 230, 26), false);
+        _presentationPopup.AddItem("— click Refresh —");
+        v.AddSubview(_presentationPopup);
+
+        var refreshBtn = new NSButton(new CGRect(260, 76, 80, 26));
+        refreshBtn.Title = "Refresh";
+        refreshBtn.BezelStyle = NSBezelStyle.Rounded;
+        refreshBtn.Activated += (_, _) => _ = LoadPresentationsAsync();
+        v.AddSubview(refreshBtn);
 
         // ── Save ──────────────────────────────────────────────────────────────
 
@@ -109,9 +138,11 @@ public sealed class SettingsPanel : NSPanel
         _saveMessage.Font = NSFont.SystemFontOfSize(11);
         v.AddSubview(_saveMessage);
 
-        // Kick off the initial QR + display loads so they appear without waiting.
+        // Kick off initial loads so they appear without waiting.
         RefreshQr();
         _ = LoadDisplaysAsync();
+        if (!string.IsNullOrEmpty(settings.SlideProApiKey))
+            _ = LoadPresentationsAsync();
     }
 
     public void UpdateStatus(bool connected, IReadOnlyList<string> urls)
@@ -189,6 +220,51 @@ public sealed class SettingsPanel : NSPanel
         catch { /* server not ready yet — the placeholder Auto item stays */ }
     }
 
+    private async Task LoadPresentationsAsync()
+    {
+        var apiKey = _apiKeyField.StringValue.Trim();
+        if (string.IsNullOrEmpty(apiKey)) return;
+
+        try
+        {
+            using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            var url = $"http://localhost:{_settings.RelayPort}/api/slidepro/presentations?apiKey={Uri.EscapeDataString(apiKey)}";
+            var json = await client.GetStringAsync(url);
+            var (titles, ids) = ParsePresentations(json);
+
+            InvokeOnMainThread(() =>
+            {
+                _presentationPopup.RemoveAllItems();
+                _presentationPopup.AddItems([.. titles]);
+                _presentationIds = ids;
+
+                var sel = ids.IndexOf(_settings.SlideProPresentationId);
+                _presentationPopup.SelectItem(sel >= 0 ? sel : 0);
+            });
+        }
+        catch { /* bad key or server not ready — placeholder stays */ }
+    }
+
+    private static (List<string> Titles, List<string> Ids) ParsePresentations(string json)
+    {
+        var titles = new List<string>();
+        var ids = new List<string>();
+
+        using var doc = JsonDocument.Parse(json);
+        if (doc.RootElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var p in doc.RootElement.EnumerateArray())
+            {
+                var id = p.GetProperty("presentationId").GetString() ?? "";
+                var title = p.TryGetProperty("title", out var t) ? t.GetString() ?? id : id;
+                titles.Add(title);
+                ids.Add(id);
+            }
+        }
+
+        return (titles, ids);
+    }
+
     private static (List<string> Titles, List<int> Indices) ParseDisplays(string json)
     {
         var titles = new List<string> { "Auto — match audience" };
@@ -225,6 +301,11 @@ public sealed class SettingsPanel : NSPanel
 
         var sel = (int)_displayPopup.IndexOfSelectedItem;
         _settings.CaptureDisplayIndex = sel >= 0 && sel < _displayIndices.Count ? _displayIndices[sel] : 0;
+
+        _settings.SlideProEnabled = _slideProCheckbox.State == NSCellStateValue.On;
+        _settings.SlideProApiKey = _apiKeyField.StringValue.Trim();
+        var psel = (int)_presentationPopup.IndexOfSelectedItem;
+        _settings.SlideProPresentationId = psel >= 0 && psel < _presentationIds.Count ? _presentationIds[psel] : "";
 
         _saveMessage.StringValue = "Restarting…";
         _onSave(_settings);

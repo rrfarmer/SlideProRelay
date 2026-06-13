@@ -90,6 +90,39 @@ public sealed class MacScreenCaptureService : IScreenCaptureService
                 return null;
             }
 
+            var optimized = Path.Combine(Path.GetTempPath(), $"spr-opt-{Guid.NewGuid():N}.jpg");
+            try
+            {
+                // sips: re-encode at 85% quality and cap width at 1920px (only downscales).
+                // --resampleHeightWidthMax with a huge height value acts as a width-only cap.
+                var sipsPsi = new ProcessStartInfo("sips")
+                {
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                sipsPsi.ArgumentList.Add("-s"); sipsPsi.ArgumentList.Add("formatOptions"); sipsPsi.ArgumentList.Add("85");
+                sipsPsi.ArgumentList.Add("--resampleHeightWidthMax"); sipsPsi.ArgumentList.Add("99999"); sipsPsi.ArgumentList.Add("1920");
+                sipsPsi.ArgumentList.Add(tmp);
+                sipsPsi.ArgumentList.Add("--out"); sipsPsi.ArgumentList.Add(optimized);
+
+                using var sipsProc = Process.Start(sipsPsi);
+                if (sipsProc is not null)
+                {
+                    await sipsProc.WaitForExitAsync(ct);
+                    if (sipsProc.ExitCode == 0 && File.Exists(optimized))
+                    {
+                        var optimizedBytes = await File.ReadAllBytesAsync(optimized, ct);
+                        if (optimizedBytes.Length > 0) return optimizedBytes;
+                    }
+                }
+            }
+            finally
+            {
+                try { if (File.Exists(optimized)) File.Delete(optimized); } catch { /* best effort */ }
+            }
+
+            // sips unavailable or failed — fall back to the raw screencapture output
             var bytes = await File.ReadAllBytesAsync(tmp, ct);
             return bytes.Length > 0 ? bytes : null;
         }

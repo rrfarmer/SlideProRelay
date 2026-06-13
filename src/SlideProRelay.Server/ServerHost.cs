@@ -4,6 +4,7 @@ using QRCoder;
 using SlideProRelay.Server.ProPresenter;
 using SlideProRelay.Server.ProPresenter.Models;
 using SlideProRelay.Server.ScreenCapture;
+using SlideProRelay.Server.SlidePro;
 using SlideProRelay.Server.Startup;
 using System.Text.Json;
 
@@ -58,6 +59,17 @@ public static class ServerHost
         builder.Services.AddSingleton<SlideCache>();
         builder.Services.AddSingleton<SlideHistory>();
         builder.Services.AddHostedService<SlidePollingService>();
+
+        builder.Services.Configure<SlideProOptions>(
+            builder.Configuration.GetSection(SlideProOptions.SectionName));
+
+        // Named client with a longer timeout to accommodate image uploads.
+        builder.Services.AddHttpClient("SlidePro", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
+        builder.Services.AddSingleton<SlideProApiClient>();
+        builder.Services.AddHostedService<SlideProRelayService>();
 
         // Screen capture: real output-display pixels, served from /api/screen-capture.
         // Platform impl is selected at runtime, mirroring the port detector above.
@@ -198,6 +210,25 @@ public static class ServerHost
                     await SendEvent(ctx.Response, status, history, ct);
             }
             catch (OperationCanceledException) { }
+        });
+
+        // Proxies to SlidePro's /presentations endpoint so the tray settings UI can
+        // populate a dropdown without knowing the base URL. apiKey can be passed as a
+        // query param so the user can refresh the list before saving their key.
+        app.MapGet("/api/slidepro/presentations", async (
+            SlideProApiClient slideProClient,
+            IOptionsMonitor<SlideProOptions> slideProOpts,
+            string? apiKey,
+            CancellationToken ct) =>
+        {
+            var key = !string.IsNullOrWhiteSpace(apiKey) ? apiKey : slideProOpts.CurrentValue.ApiKey;
+            if (string.IsNullOrWhiteSpace(key))
+                return Results.BadRequest(new { message = "No API key provided." });
+
+            var presentations = await slideProClient.GetPresentationsAsync(key, ct);
+            return presentations is null
+                ? Results.StatusCode(502)
+                : Results.Ok(presentations);
         });
 
         app.MapGet("/api/qr", (IConfiguration config) =>

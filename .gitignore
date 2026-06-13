@@ -487,3 +487,4 @@ installer-mac/output/
 
 # Local signing credentials — never commit
 installer-mac/signing-config.sh
+docs/slidepro-public-api-integration-guide.md
