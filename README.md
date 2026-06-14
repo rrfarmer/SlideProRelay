@@ -141,3 +141,7 @@ dotnet run --project src\SlideProRelay.Server\SlideProRelay.Server.csproj
 | `GET /events` | Server-Sent Events stream |
 | `GET /api/current` | Current slide as JSON |
 | `GET /api/health` | Returns `ok` if the relay is running |
+
+
+## License
+GNU Affero General Public License v3.0 — see [LICENSE](LICENSE) for details.
