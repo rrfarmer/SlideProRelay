@@ -6,9 +6,12 @@ namespace SlideProRelay.Tray;
 internal sealed class TrayApplicationContext : ApplicationContext
 {
     private readonly NotifyIcon _tray;
+    private readonly ContextMenuStrip _menu;
     private readonly System.Windows.Forms.Timer _timer;
     private readonly Icon _iconConnected;
     private readonly Icon _iconDisconnected;
+    private readonly SynchronizationContext _syncContext =
+        SynchronizationContext.Current ?? new SynchronizationContext();
     private RelayHost? _host;
     private StatusWindow? _window;
     private TraySettings _settings;
@@ -20,18 +23,18 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _iconConnected = BuildIcon(connected: true);
         _iconDisconnected = BuildIcon(connected: false);
 
-        var menu = new ContextMenuStrip();
-        menu.Items.Add("Open in Browser", null, OnOpenBrowser);
-        menu.Items.Add("Settings / Status", null, OnShowWindow);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Exit", null, OnExit);
+        _menu = new ContextMenuStrip();
+        _menu.Items.Add("Open in Browser", null, OnOpenBrowser);
+        _menu.Items.Add("Settings / Status", null, OnShowWindow);
+        _menu.Items.Add(new ToolStripSeparator());
+        _menu.Items.Add("Exit", null, OnExit);
 
         _tray = new NotifyIcon
         {
             Icon = _iconDisconnected,
             Visible = true,
             Text = "SlideProRelay — starting…",
-            ContextMenuStrip = menu,
+            ContextMenuStrip = _menu,
         };
         _tray.DoubleClick += (_, _) => OnShowWindow(null, EventArgs.Empty);
 
@@ -40,6 +43,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _timer.Start();
 
         _ = StartHostAsync(_settings);
+        _ = CheckForUpdateAsync();
     }
 
     // ── Host lifecycle ────────────────────────────────────────────────────────
@@ -102,6 +106,56 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _settings = newSettings;
         TraySettings.Save(newSettings);
         _ = StartHostAsync(newSettings);
+    }
+
+    // ── Update ────────────────────────────────────────────────────────────────
+
+    private async Task CheckForUpdateAsync()
+    {
+        var info = await UpdateChecker.CheckAsync();
+        if (info is null) return;
+        _syncContext.Post(_ => OnUpdateFound(info), null);
+    }
+
+    private void OnUpdateFound(UpdateChecker.UpdateInfo info)
+    {
+        var item = new ToolStripMenuItem($"Update to {info.Version}…")
+        {
+            Font = new Font(_menu.Font, FontStyle.Bold),
+        };
+        item.Click += async (_, _) => await OnUpdateClickedAsync(info, item);
+
+        _menu.Items.Insert(0, new ToolStripSeparator());
+        _menu.Items.Insert(0, item);
+
+        _tray.ShowBalloonTip(
+            10_000,
+            "Update available",
+            $"SlideProRelay {info.Version} is ready. Open the tray menu to install.",
+            ToolTipIcon.Info);
+    }
+
+    private async Task OnUpdateClickedAsync(UpdateChecker.UpdateInfo info, ToolStripMenuItem item)
+    {
+        item.Enabled = false;
+        item.Text = "Downloading…";
+
+        try
+        {
+            await UpdateChecker.DownloadAndInstallAsync(info, pct =>
+                _syncContext.Post(_ => item.Text = $"Downloading… {pct}%", null));
+            // Application.Exit() is called inside DownloadAndInstallAsync on success.
+        }
+        catch
+        {
+            item.Enabled = true;
+            item.Text = $"Update to {info.Version}… (retry)";
+            _tray.ShowBalloonTip(
+                5_000,
+                "Update failed",
+                "Could not download the update. Check your connection and try again.",
+                ToolTipIcon.Error);
+        }
     }
 
     private async void OnExit(object? sender, EventArgs e)

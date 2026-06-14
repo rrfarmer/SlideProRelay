@@ -11,13 +11,24 @@
     .\installer\build.ps1 -Version 1.2.0
 #>
 param(
-    [string]$Version = "1.0.0"
+    [string]$Version = ""
 )
 
 $ErrorActionPreference = "Stop"
 $Root     = Split-Path $PSScriptRoot -Parent
 $Publish  = "$Root\publish\windows"
 $IssFile  = "$PSScriptRoot\SlideProRelay.iss"
+
+# ── Resolve version from Directory.Build.props when not passed explicitly ─────
+
+if (-not $Version) {
+    $PropsFile = "$Root\Directory.Build.props"
+    if (Test-Path $PropsFile) {
+        $xml = [xml](Get-Content $PropsFile -Raw)
+        $Version = $xml.Project.PropertyGroup.Version
+    }
+    if (-not $Version) { $Version = "1.0.0" }
+}
 
 # ── Find Inno Setup ───────────────────────────────────────────────────────────
 

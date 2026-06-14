@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- Single source of truth for the release version. Update this before each build. -->
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+</Project>
