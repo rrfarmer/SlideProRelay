@@ -4,6 +4,7 @@ using QRCoder;
 using SlideProRelay.Server.ProPresenter;
 using SlideProRelay.Server.ProPresenter.Models;
 using SlideProRelay.Server.ScreenCapture;
+using SlideProRelay.Server.Settings;
 using SlideProRelay.Server.SlidePro;
 using SlideProRelay.Server.Startup;
 using System.Text.Json;
@@ -27,11 +28,20 @@ public static class ServerHost
     {
         var builder = WebApplication.CreateBuilder(args);
 
+        var mutableCfg = new MutableConfigSource();
+
         if (configOverrides is not null)
             builder.Configuration.AddInMemoryCollection(configOverrides);
 
+        // Added after AddInMemoryCollection so its values take precedence on hot-reload.
+        builder.Configuration.Sources.Add(mutableCfg);
+
         var relayPort = builder.Configuration.GetValue<int>("Relay:Port", 5174);
         builder.WebHost.UseUrls($"http://*:{relayPort}");
+
+        // CORS — permits cross-origin health polls after a port change (local app only).
+        builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
+            p.SetIsOriginAllowed(_ => true).AllowAnyMethod().AllowAnyHeader()));
 
         builder.Services.Configure<ProPresenterOptions>(
             builder.Configuration.GetSection(ProPresenterOptions.SectionName));
@@ -83,7 +93,13 @@ public static class ServerHost
                     : new NullScreenCaptureService());
         builder.Services.AddHostedService<ScreenCaptureCoordinator>();
 
+        // Settings service — reads/writes the JSON settings file supplied by the host app.
+        builder.Services.AddSingleton<SettingsService>();
+        builder.Services.AddSingleton<RestartSignal>();
+        builder.Services.AddSingleton(mutableCfg);
+
         var app = builder.Build();
+        app.UseCors();
 
         MapEndpoints(app);
 
@@ -245,6 +261,54 @@ public static class ServerHost
         });
 
         app.MapGet("/", () => Results.Content(HtmlPage.Content, "text/html"));
+
+        // ── Settings web UI + API ──────────────────────────────────────────────
+
+        app.MapGet("/settings", () => Results.Content(SettingsPage.Content, "text/html"));
+
+        // Returns the LAN and localhost URLs for the phone display page.
+        app.MapGet("/api/network-url", (IConfiguration config) =>
+        {
+            var port = config.GetValue<int>("Relay:Port", 5174);
+            var lan  = NetworkUrlPrinter.GetLanIp();
+            return Results.Ok(new
+            {
+                local   = $"http://localhost:{port}",
+                network = lan is not null ? $"http://{lan}:{port}" : (string?)null,
+            });
+        });
+
+        app.MapGet("/api/settings", (SettingsService settingsSvc) =>
+        {
+            if (!settingsSvc.IsConfigured)
+                return Results.Problem("Settings file path not configured.", statusCode: 503);
+            return Results.Ok(settingsSvc.Load() ?? new RelaySettings());
+        });
+
+        app.MapPost("/api/settings", (
+            RelaySettings body,
+            SettingsService settingsSvc,
+            MutableConfigSource mutableCfg,
+            RestartSignal restart,
+            IConfiguration config) =>
+        {
+            if (!settingsSvc.IsConfigured)
+                return Results.Problem("Settings file path not configured.", statusCode: 503);
+
+            settingsSvc.Save(body);
+
+            var currentPort = config.GetValue<int>("Relay:Port", 5174);
+            if (body.RelayPort != currentPort)
+            {
+                // Port change requires a new socket binding — full restart.
+                _ = Task.Delay(250).ContinueWith(_ => restart.SignalRestart());
+                return Results.Ok(new { saved = true, newPort = body.RelayPort, restarting = true });
+            }
+
+            // Everything else is consumed via IOptionsMonitor<T> — hot-reload in place.
+            mutableCfg.Update(body.ToConfigOverrides());
+            return Results.Ok(new { saved = true, newPort = body.RelayPort, restarting = false });
+        });
     }
 
     private static async Task SendEvent(HttpResponse response, SlideStatus status, SlideHistory history, CancellationToken ct)

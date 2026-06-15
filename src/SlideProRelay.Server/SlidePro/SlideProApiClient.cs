@@ -92,4 +92,32 @@ public sealed class SlideProApiClient(
             return null;
         }
     }
+
+    public async Task PostSlideTextAsync(
+        string apiKey, string? uuid, string? currentText, string? nextText, DateTimeOffset sentAt,
+        CancellationToken ct = default)
+    {
+        var baseUrl = opts.CurrentValue.BaseUrl.TrimEnd('/');
+        var presentationId = opts.CurrentValue.PresentationId;
+        var body = JsonSerializer.Serialize(new { presentationId, uuid, current = currentText, next = nextText, sentAt });
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/relay/text")
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json")
+        };
+        req.Headers.Add("X-Api-Key", apiKey);
+
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(5));
+            using var http = httpFactory.CreateClient("SlidePro");
+            var resp = await http.SendAsync(req, cts.Token);
+            resp.EnsureSuccessStatusCode();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "SlidePro: failed to post slide text for {Uuid}", uuid);
+        }
+    }
 }

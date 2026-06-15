@@ -53,6 +53,15 @@ public sealed class SlideProRelayService(
     {
         var o = opts.CurrentValue;
 
+        if (o.SendTextUpdates && !string.IsNullOrWhiteSpace(o.ApiKey) && status.Current is not null)
+            await client.PostSlideTextAsync(
+                o.ApiKey,
+                status.Current.Uuid,
+                status.Current.Text,
+                status.Next?.Text,
+                status.UpdatedAt,
+                ct);
+
         if (!o.Enabled
             || string.IsNullOrWhiteSpace(o.ApiKey)
             || string.IsNullOrWhiteSpace(o.PresentationId)

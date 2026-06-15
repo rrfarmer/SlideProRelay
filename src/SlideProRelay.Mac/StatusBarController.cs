@@ -10,7 +10,6 @@ public sealed class StatusBarController : NSObject
     private readonly NSMenuItem _loginMenuItem;
     private RelayHost? _host;
     private MacSettings _settings;
-    private SettingsPanel? _settingsPanel;
 
     private static readonly string LaunchAgentId = "io.slidepro.relay";
     private static readonly string LaunchAgentPath = Path.Combine(
@@ -39,7 +38,7 @@ public sealed class StatusBarController : NSObject
         menu.AddItem(openItem);
 
         var settingsItem = new NSMenuItem("Settings…");
-        settingsItem.Activated += (_, _) => ShowSettings();
+        settingsItem.Activated += (_, _) => OpenSettings();
         menu.AddItem(settingsItem);
 
         menu.AddItem(NSMenuItem.SeparatorItem);
@@ -69,15 +68,26 @@ public sealed class StatusBarController : NSObject
 
     private async Task StartHostAsync(MacSettings settings)
     {
-        if (_host is not null)
+        // Null _host first so the status timer guard fires during stop/dispose,
+        // preventing access to a disposed IServiceProvider.
+        var old = _host;
+        _host = null;
+        if (old is not null)
         {
-            await _host.StopAsync();
-            await _host.DisposeAsync();
-            _host = null;
+            old.RestartRequested -= OnRestartRequested;
+            await old.StopAsync();
+            await old.DisposeAsync();
         }
 
         _host = RelayHost.Create(settings.ToConfigOverrides());
+        _host.RestartRequested += OnRestartRequested;
         await _host.StartAsync();
+    }
+
+    private void OnRestartRequested()
+    {
+        _settings = MacSettings.Load();
+        _ = StartHostAsync(_settings);
     }
 
     // ── Status ticker ─────────────────────────────────────────────────────────
@@ -85,38 +95,18 @@ public sealed class StatusBarController : NSObject
     private void UpdateStatus()
     {
         var connected = _host?.Cache.Latest?.Connection == ConnectionState.Connected;
-
         _statusMenuItem.Title = connected
             ? "● ProPresenter connected"
             : "○ ProPresenter not detected";
-
-        _settingsPanel?.UpdateStatus(connected, _host?.Urls ?? []);
     }
 
     // ── Menu actions ──────────────────────────────────────────────────────────
 
-    private void OpenBrowser()
-    {
-        var url = $"http://localhost:{_settings.RelayPort}";
-        NSWorkspace.SharedWorkspace.OpenUrl(new NSUrl(url));
-    }
+    private void OpenBrowser() =>
+        NSWorkspace.SharedWorkspace.OpenUrl(new NSUrl($"http://localhost:{_settings.RelayPort}"));
 
-    private void ShowSettings()
-    {
-        if (_settingsPanel is null || !_settingsPanel.IsVisible)
-            _settingsPanel = new SettingsPanel(_settings, OnSaveSettings);
-
-        NSApplication.SharedApplication.ActivateIgnoringOtherApps(true);
-        _settingsPanel.MakeKeyAndOrderFront(null);
-        _settingsPanel.Center();
-    }
-
-    private void OnSaveSettings(MacSettings newSettings)
-    {
-        _settings = newSettings;
-        MacSettings.Save(newSettings);
-        _ = StartHostAsync(newSettings);
-    }
+    private void OpenSettings() =>
+        NSWorkspace.SharedWorkspace.OpenUrl(new NSUrl($"http://localhost:{_settings.RelayPort}/settings"));
 
     // ── Start at Login (LaunchAgent) ──────────────────────────────────────────
 
@@ -132,7 +122,6 @@ public sealed class StatusBarController : NSObject
 
     private void EnableLoginItem()
     {
-        // Write a LaunchAgent plist that points to the installed app location
         var plist = $"""
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -190,15 +179,14 @@ public sealed class StatusBarController : NSObject
         str.DrawAtPoint(new CGPoint(2, 2));
 
         image.UnlockFocus();
-        image.Template = true; // Adapts automatically to light/dark menu bar
+        image.Template = true;
 
         return image;
     }
 
     /// <summary>
     /// Stops the embedded web server on a background thread, then invokes
-    /// <paramref name="onComplete"/> on the main thread. Never blocks the
-    /// caller — the app delegate uses this to quit without deadlocking.
+    /// <paramref name="onComplete"/> on the main thread.
     /// </summary>
     public void BeginShutdown(Action onComplete)
     {
@@ -216,7 +204,7 @@ public sealed class StatusBarController : NSObject
                     await host.DisposeAsync();
                 }
             }
-            catch { /* best effort — we're quitting anyway */ }
+            catch { }
         }).ContinueWith(_ => InvokeOnMainThread(onComplete));
     }
 

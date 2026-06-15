@@ -10,22 +10,19 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _timer;
     private readonly Icon _iconConnected;
     private readonly Icon _iconDisconnected;
-    private readonly SynchronizationContext _syncContext =
-        SynchronizationContext.Current ?? new SynchronizationContext();
     private RelayHost? _host;
-    private StatusWindow? _window;
     private TraySettings _settings;
 
     public TrayApplicationContext()
     {
         _settings = TraySettings.Load();
 
-        _iconConnected = BuildIcon(connected: true);
+        _iconConnected    = BuildIcon(connected: true);
         _iconDisconnected = BuildIcon(connected: false);
 
         _menu = new ContextMenuStrip();
         _menu.Items.Add("Open in Browser", null, OnOpenBrowser);
-        _menu.Items.Add("Settings / Status", null, OnShowWindow);
+        _menu.Items.Add("Settings…", null, OnOpenSettings);
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add("Exit", null, OnExit);
 
@@ -36,7 +33,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             Text = "SlideProRelay — starting…",
             ContextMenuStrip = _menu,
         };
-        _tray.DoubleClick += (_, _) => OnShowWindow(null, EventArgs.Empty);
+        _tray.DoubleClick += (_, _) => OnOpenSettings(null, EventArgs.Empty);
 
         _timer = new System.Windows.Forms.Timer { Interval = 1000 };
         _timer.Tick += OnTick;
@@ -50,15 +47,26 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private async Task StartHostAsync(TraySettings settings)
     {
-        if (_host is not null)
+        // Null _host first so the timer guard (`if (_host is null) return`) fires
+        // during the entire stop/dispose window, preventing access to a disposed IServiceProvider.
+        var old = _host;
+        _host = null;
+        if (old is not null)
         {
-            await _host.StopAsync();
-            await _host.DisposeAsync();
-            _host = null;
+            old.RestartRequested -= OnRestartRequested;
+            await old.StopAsync();
+            await old.DisposeAsync();
         }
 
         _host = RelayHost.Create(settings.ToConfigOverrides());
+        _host.RestartRequested += OnRestartRequested;
         await _host.StartAsync();
+    }
+
+    private void OnRestartRequested()
+    {
+        _settings = TraySettings.Load();
+        _ = StartHostAsync(_settings);
     }
 
     // ── Timer ─────────────────────────────────────────────────────────────────
@@ -66,47 +74,26 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private void OnTick(object? sender, EventArgs e)
     {
         if (_host is null) return;
-
-        var cache = _host.Cache;
-        var connected = cache?.Latest?.Connection == ConnectionState.Connected;
-
+        var connected = _host.Cache?.Latest?.Connection == ConnectionState.Connected;
         _tray.Icon = connected ? _iconConnected : _iconDisconnected;
         _tray.Text = connected
             ? "SlideProRelay — ProPresenter connected"
             : "SlideProRelay — ProPresenter not detected";
-
-        var activePort = _host?.ActiveProPresenterPort ?? _settings.ProPresenterPort;
-        _window?.UpdateStatus(connected, _host?.Urls ?? [], activePort);
     }
 
     // ── Menu handlers ─────────────────────────────────────────────────────────
 
-    private void OnOpenBrowser(object? sender, EventArgs e)
-    {
-        var url = $"http://localhost:{_settings.RelayPort}";
+    private void OnOpenBrowser(object? sender, EventArgs e) =>
+        OpenUrl($"http://localhost:{_settings.RelayPort}");
+
+    private void OnOpenSettings(object? sender, EventArgs e) =>
+        OpenUrl($"http://localhost:{_settings.RelayPort}/settings");
+
+    private static void OpenUrl(string url) =>
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
         {
             UseShellExecute = true
         });
-    }
-
-    private void OnShowWindow(object? sender, EventArgs e)
-    {
-        if (_window is null || _window.IsDisposed)
-            _window = new StatusWindow(_settings, OnSaveSettings);
-
-        if (!_window.Visible)
-            _window.Show();
-
-        _window.BringToFront();
-    }
-
-    private void OnSaveSettings(TraySettings newSettings)
-    {
-        _settings = newSettings;
-        TraySettings.Save(newSettings);
-        _ = StartHostAsync(newSettings);
-    }
 
     // ── Update ────────────────────────────────────────────────────────────────
 
@@ -114,7 +101,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         var info = await UpdateChecker.CheckAsync();
         if (info is null) return;
-        _syncContext.Post(_ => OnUpdateFound(info), null);
+        SynchronizationContext.Current?.Post(_ => OnUpdateFound(info), null);
     }
 
     private void OnUpdateFound(UpdateChecker.UpdateInfo info)
@@ -143,8 +130,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         try
         {
             await UpdateChecker.DownloadAndInstallAsync(info, pct =>
-                _syncContext.Post(_ => item.Text = $"Downloading… {pct}%", null));
-            // Application.Exit() is called inside DownloadAndInstallAsync on success.
+                SynchronizationContext.Current?.Post(_ => item.Text = $"Downloading… {pct}%", null));
         }
         catch
         {
@@ -181,18 +167,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         g.Clear(Color.Transparent);
 
-        // Dark rounded background
         using var bg = new SolidBrush(Color.FromArgb(45, 45, 48));
         g.FillRectangle(bg, 0, 0, 32, 32);
 
-        // "P7" label
         using var font = new Font("Segoe UI", 9f, FontStyle.Bold);
         using var textBrush = new SolidBrush(Color.White);
         var textRect = new RectangleF(0, 4, 24, 18);
         using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
         g.DrawString("P7", font, textBrush, textRect, sf);
 
-        // Status dot
         using var dot = new SolidBrush(connected ? Color.FromArgb(100, 220, 100) : Color.FromArgb(220, 80, 60));
         g.FillEllipse(dot, 20, 20, 11, 11);
 

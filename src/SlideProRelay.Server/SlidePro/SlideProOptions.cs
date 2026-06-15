@@ -15,4 +15,7 @@ public sealed class SlideProOptions
 
     /// <summary>Target presentation GUID — selected by the user in the tray settings UI.</summary>
     public string PresentationId { get; set; } = "";
+
+    /// <summary>Whether to send text-only slide updates to SlidePro.io on each slide change.</summary>
+    public bool SendTextUpdates { get; set; } = false;
 }

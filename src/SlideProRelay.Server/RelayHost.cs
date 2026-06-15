@@ -1,4 +1,5 @@
 using SlideProRelay.Server.ProPresenter;
+using SlideProRelay.Server.Settings;
 
 namespace SlideProRelay.Server;
 
@@ -28,6 +29,16 @@ public sealed class RelayHost : IAsyncDisposable
     /// </summary>
     public int ActiveProPresenterPort =>
         _app.Services.GetRequiredService<ProPresenterEndpoint>().Current.Port;
+
+    /// <summary>
+    /// Fires when the web settings page has saved new settings and wants the
+    /// host (tray / mac app) to reload them and restart the server.
+    /// </summary>
+    public event Action? RestartRequested
+    {
+        add    => _app.Services.GetRequiredService<RestartSignal>().RestartRequested += value;
+        remove => _app.Services.GetRequiredService<RestartSignal>().RestartRequested -= value;
+    }
 
     public ValueTask DisposeAsync() => _app.DisposeAsync();
 }
