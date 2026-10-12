@@ -23,6 +23,11 @@ public sealed class ScreenCaptureCoordinator : BackgroundService
     private readonly IOptionsMonitor<ScreenCaptureOptions> _opts;
     private readonly ILogger<ScreenCaptureCoordinator> _logger;
 
+    // Set while capture is on hold because no display may be captured (e.g. a
+    // single-display machine in auto mode). Lets us log the hold once, not on
+    // every slide change, and announce when capture resumes.
+    private DisplaySelectionReason? _holdReason;
+
     public ScreenCaptureCoordinator(
         SlideCache slides,
         IProPresenterClient client,
@@ -66,7 +71,7 @@ public sealed class ScreenCaptureCoordinator : BackgroundService
             var key = KeyFor(status);
             if (key is null)
             {
-                // Nothing live (offline or cleared) — drop the stale frame so
+                // Nothing live (offline or cleared): drop the stale frame so
                 // consumers don't keep showing the last slide.
                 _cache.Clear();
                 lastKey = null;
@@ -91,8 +96,27 @@ public sealed class ScreenCaptureCoordinator : BackgroundService
         {
             await foreach (var key in signals.Reader.ReadAllAsync(ct))
             {
-                var index = await ResolveDisplayIndexAsync(ct);
-                var jpeg = await _capture.CaptureAsync(index, ct);
+                var selection = await SelectDisplayAsync(ct);
+                if (!selection.HasDisplay)
+                {
+                    // Nothing we may capture. Drop any stale frame so consumers
+                    // get a 204 instead of an old slide, and say why once.
+                    _cache.Clear();
+                    if (_holdReason != selection.Reason)
+                    {
+                        _holdReason = selection.Reason;
+                        _logger.LogInformation("Screen capture on hold: {Reason}", selection.Description);
+                    }
+                    continue;
+                }
+
+                if (_holdReason is not null)
+                {
+                    _holdReason = null;
+                    _logger.LogInformation("Screen capture resumed: {Reason}", selection.Description);
+                }
+
+                var jpeg = await _capture.CaptureAsync(selection.Index, ct);
                 if (jpeg is not null)
                     _cache.Set(jpeg, key);
                 else
@@ -104,22 +128,30 @@ public sealed class ScreenCaptureCoordinator : BackgroundService
         _logger.LogInformation("Screen capture stopped");
     }
 
-    // Picks which display to capture: a manual ScreenCapture:DisplayIndex wins;
-    // otherwise auto-match ProPresenter's audience-screen resolution (skipping the
-    // ProPresenter call entirely when a manual index is set).
-    private async Task<int> ResolveDisplayIndexAsync(CancellationToken ct)
+    // Picks which display to capture: a manual ScreenCapture:DisplayIndex wins
+    // (and skips the ProPresenter round-trip); otherwise auto-match ProPresenter's
+    // audience-screen resolution among the non-primary displays. Auto never picks
+    // the primary display, so a single-display machine yields "no display" until
+    // the operator chooses one explicitly.
+    private async Task<DisplaySelection> SelectDisplayAsync(CancellationToken ct)
     {
         var configured = _opts.CurrentValue.DisplayIndex;
         var displays = _capture.GetDisplays();
 
         if (configured >= 1)
-            return DisplaySelector.Resolve(displays, configured, null, null);
+        {
+            var manual = DisplaySelector.Resolve(displays, configured, null, null);
+            if (manual.Reason == DisplaySelectionReason.Configured)
+                return manual;
+            // The configured display isn't attached (unplugged?): fall through
+            // to auto, using the same inputs /api/displays reports.
+        }
 
         var audience = await _client.GetAudienceScreenSizeAsync(ct);
-        return DisplaySelector.Resolve(displays, 0, audience?.Width, audience?.Height);
+        return DisplaySelector.Resolve(displays, configured, audience?.Width, audience?.Height);
     }
 
-    // Identity of the live slide — its uuid (or text as a fallback). Null when
+    // Identity of the live slide: its uuid (or text as a fallback). Null when
     // nothing is live, which signals "clear the cached frame".
     private static string? KeyFor(SlideStatus status)
     {

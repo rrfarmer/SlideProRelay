@@ -57,7 +57,12 @@ public sealed class MacScreenCaptureService : IScreenCaptureService
 
     public async Task<byte[]?> CaptureAsync(int displayIndex, CancellationToken ct = default)
     {
-        var display = ResolveDisplayIndex(displayIndex);
+        if (ResolveDisplayIndex(displayIndex) is not int display)
+        {
+            _logger.LogDebug("No non-primary display to capture; set an explicit display index to capture the primary");
+            return null;
+        }
+
         var tmp = Path.Combine(Path.GetTempPath(), $"spr-capture-{Guid.NewGuid():N}.jpg");
 
         try
@@ -137,15 +142,15 @@ public sealed class MacScreenCaptureService : IScreenCaptureService
         }
     }
 
-    // <= 0 means "service default": the first non-primary display, else display 1.
-    private int ResolveDisplayIndex(int requested)
+    // <= 0 means "service default": the first non-primary display. Deliberately
+    // no fallback to the primary (null instead) — capturing the operator's
+    // desktop must be an explicit choice (ScreenCapture:DisplayIndex).
+    private int? ResolveDisplayIndex(int requested)
     {
         if (requested >= 1)
             return requested;
 
-        var displays = GetDisplays();
-        var firstNonPrimary = displays.FirstOrDefault(d => !d.IsPrimary);
-        return firstNonPrimary?.Index ?? 1;
+        return GetDisplays().FirstOrDefault(d => !d.IsPrimary)?.Index;
     }
 
     // ── CoreGraphics interop ────────────────────────────────────────────────

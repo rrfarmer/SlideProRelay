@@ -20,6 +20,7 @@ internal static class SettingsPage
               --text:     #f1f5f9;
               --muted:    #94a3b8;
               --ok:       #34d399;
+              --warn:     #fbbf24;
               --err:      #f87171;
             }
             *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -195,6 +196,7 @@ internal static class SettingsPage
               margin-bottom: 6px;
             }
             .hint { font-size: 11px; color: var(--muted); margin-top: 5px; }
+            .hint.warn { color: var(--warn); }
 
             input[type="text"],
             input[type="number"],
@@ -529,9 +531,10 @@ internal static class SettingsPage
                 <div class="div"></div>
                 <div class="field">
                   <label>Capture Display</label>
-                  <select id="displaySelect">
+                  <select id="displaySelect" onchange="updateDisplayHint()">
                     <option value="0">Auto — match audience</option>
                   </select>
+                  <div class="hint" id="displayHint"></div>
                 </div>
               </div>
             </div>
@@ -700,9 +703,12 @@ internal static class SettingsPage
         }
 
         // ── Displays ─────────────────────────────────────────────────────────
+        let _displays = null; // last /api/displays payload
+
         async function loadDisplays() {
           try {
             const d = await fetch('/api/displays').then(r => r.json());
+            _displays = d;
             const sel = document.getElementById('displaySelect');
             sel.innerHTML = '<option value="0">Auto — match audience</option>';
             for (const disp of d.displays || []) {
@@ -710,7 +716,29 @@ internal static class SettingsPage
               sel.appendChild(new Option(`Display ${disp.index} — ${disp.width}×${disp.height}${tag}`, disp.index));
             }
             if (window._pendingDisplayIndex != null) sel.value = window._pendingDisplayIndex;
+            updateDisplayHint();
           } catch {}
+        }
+
+        // Explains what the current picker choice will capture. In Auto mode the
+        // server decides — and it never captures a lone primary display, so when
+        // it would capture nothing the hint says so (e.g. "No second display;
+        // pick one to capture") and is styled as a warning.
+        function updateDisplayHint() {
+          const hint = document.getElementById('displayHint');
+          const sel  = document.getElementById('displaySelect');
+          if (!_displays) { hint.textContent = ''; hint.classList.remove('warn'); return; }
+          const chosen = Number(sel.value) || 0;
+          if (chosen === 0) {
+            hint.textContent = _displays.autoReason || '';
+            hint.classList.toggle('warn', !_displays.autoIndex);
+            return;
+          }
+          const disp = (_displays.displays || []).find(x => x.index === chosen);
+          hint.textContent = disp && disp.isPrimary
+            ? 'This is your main display — everything on it will be visible to viewers'
+            : '';
+          hint.classList.remove('warn');
         }
 
         // ── Presentations ─────────────────────────────────────────────────────

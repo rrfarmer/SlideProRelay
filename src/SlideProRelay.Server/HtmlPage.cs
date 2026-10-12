@@ -170,14 +170,21 @@ internal static class HtmlPage
             // 'text' (relayed slide text) or 'screen' (live screen capture).
             let viewMode    = localStorage.getItem('viewMode') === 'screen' ? 'screen' : 'text';
             let lastData    = null;
-            let screenToken = 0; // bumped to cancel an in-flight screen refresh loop
+            let screenToken   = 0;    // bumped to cancel an in-flight screen refresh loop
+            let screenWaitKey = null; // slide key an in-flight wait loop is polling for
+            let screenGaveUp  = null; // slide key already reported as unavailable
 
             const sleep = ms => new Promise(r => setTimeout(r, ms));
 
             // ── visibility helpers ──────────────────────────────────────────────
             function hideThumb()    { slideEl.style.display = 'none'; slideEl.dataset.key = ''; }
             function hideScreenEl() { screenEl.style.display = 'none'; screenEl.dataset.key = ''; }
-            function cancelScreen() { screenToken++; hideScreenEl(); } // also stops any loop
+            // Inline style is '' (not 'none') until the element has been hidden once,
+            // so test for "shown" rather than for 'none'.
+            function screenShown()  { return screenEl.style.display === 'block'; }
+            function cancelScreen() { // also stops any loop
+              screenToken++; screenWaitKey = null; screenGaveUp = null; hideScreenEl();
+            }
             function showTextArea() { currentEl.style.display = 'flex'; }
             function hideTextArea() { currentEl.style.display = 'none'; }
 
@@ -240,38 +247,51 @@ internal static class HtmlPage
             // poll the cheap key endpoint instead of risking a stale frame.
             async function showScreenFor(targetKey) {
               const token = ++screenToken;
+              screenWaitKey = targetKey;
               const deadline = Date.now() + 5000;
-              while (Date.now() < deadline && token === screenToken) {
-                try {
-                  const r = await fetch('/api/screen-capture/key?cb=' + Date.now());
-                  if (r.ok) {
-                    const j = await r.json();
-                    if (token !== screenToken) return;
-                    if (!targetKey || j.key === targetKey) {
-                      setScreenSrc(j.key || ('t' + Date.now()));
-                      return;
+              try {
+                while (Date.now() < deadline && token === screenToken) {
+                  try {
+                    const r = await fetch('/api/screen-capture/key?cb=' + Date.now());
+                    if (r.ok) {
+                      const j = await r.json();
+                      if (token !== screenToken) return;
+                      if (!targetKey || j.key === targetKey) {
+                        setScreenSrc(j.key || ('t' + Date.now()));
+                        return;
+                      }
                     }
-                  }
-                } catch (_) { /* retry */ }
-                // Only show a waiting hint if nothing is on screen yet; otherwise
-                // keep the previous frame visible until the new one is ready.
-                if (screenEl.style.display === 'none') screenMessage('Waiting for screen…');
-                await sleep(250);
+                  } catch (_) { /* retry */ }
+                  // Only show a waiting hint if nothing is on screen yet; otherwise
+                  // keep the previous frame visible until the new one is ready. Once
+                  // we've given up on this slide, keep "unavailable" up and retry
+                  // quietly (the relay serves 204 until a display is captured).
+                  if (!screenShown() && targetKey !== screenGaveUp) screenMessage('Waiting for screen…');
+                  await sleep(250);
+                }
+                if (token === screenToken && !screenShown()) {
+                  screenGaveUp = targetKey;
+                  screenMessage('Screen capture unavailable');
+                }
+              } finally {
+                if (token === screenToken) screenWaitKey = null;
               }
-              if (token === screenToken && screenEl.style.display === 'none')
-                screenMessage('Screen capture unavailable');
             }
 
             function renderScreen(d) {
               hideThumb();
               statusEl.textContent = '● Live — screen';
               nextEl.textContent   = '';
-              if (d.current) {
-                showScreenFor(d.current.uuid || '');
-              } else {
+              if (!d.current) {
                 cancelScreen();
                 idle('Nothing on screen');
+                return;
               }
+              const key = d.current.uuid || '';
+              // The feed re-renders on every poll tick, so don't restart a wait
+              // that's already in flight for this slide or it would never time out.
+              if (key === screenWaitKey) return;
+              showScreenFor(key);
             }
 
             // ── dispatcher ───────────────────────────────────────────────────────

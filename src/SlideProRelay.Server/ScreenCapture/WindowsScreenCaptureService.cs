@@ -118,8 +118,15 @@ public sealed class WindowsScreenCaptureService : IScreenCaptureService
             }
             else
             {
-                var firstNonPrimary = attached.FindIndex(x => !x.IsPrimary);
-                chosen = firstNonPrimary >= 0 ? firstNonPrimary : 0;
+                // Service default: the first non-primary display. Deliberately no
+                // fallback to the primary — capturing the operator's desktop must
+                // be an explicit choice (ScreenCapture:DisplayIndex).
+                chosen = attached.FindIndex(x => !x.IsPrimary);
+                if (chosen < 0)
+                {
+                    _logger.LogDebug("No non-primary display to capture; set an explicit display index to capture the primary");
+                    return null;
+                }
             }
 
             return CaptureOutput(attached[chosen].Adapter, attached[chosen].Output);

@@ -12,8 +12,11 @@ public sealed class ScreenCaptureOptions
 
     /// <summary>
     /// 1-based display to capture (matches macOS <c>screencapture -D</c>).
-    /// 0 = auto: capture the first non-primary display when more than one is
-    /// attached (typically the ProPresenter output), otherwise the main display.
+    /// 0 = auto: capture the first non-primary display, preferring the one whose
+    /// size matches ProPresenter's audience screen. Auto never captures the
+    /// primary display. On a single-display machine nothing is captured until a
+    /// display is chosen here explicitly, so the operator's desktop is never
+    /// published by accident.
     /// </summary>
     public int DisplayIndex { get; init; } = 0;
 }

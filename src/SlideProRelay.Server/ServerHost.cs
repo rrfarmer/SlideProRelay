@@ -153,8 +153,10 @@ public static class ServerHost
         });
 
         // Lists capturable displays + ProPresenter's audience-screen size and which
-        // display the relay would capture. Powers the tray "Capture display" picker
-        // and is a handy diagnostic for multi-monitor setups.
+        // display the relay would capture. Powers the settings page "Capture
+        // display" picker and is a handy diagnostic for multi-monitor setups.
+        // selectedIndex is 0 when nothing will be captured (auto mode never picks
+        // the primary display); `reason` says why in operator-facing terms.
         app.MapGet("/api/displays", async (
             IScreenCaptureService capture,
             IProPresenterClient client,
@@ -166,11 +168,20 @@ public static class ServerHost
             var configured = opts.CurrentValue.DisplayIndex;
             var selected = DisplaySelector.Resolve(displays, configured, audience?.Width, audience?.Height);
 
+            // What "Auto" would do right now, so the picker can explain that
+            // option even while a manual index is configured.
+            var auto = configured >= 1
+                ? DisplaySelector.Resolve(displays, 0, audience?.Width, audience?.Height)
+                : selected;
+
             return Results.Ok(new
             {
                 supported = capture.IsSupported,
                 configuredIndex = configured, // 0 = auto
-                selectedIndex = selected,
+                selectedIndex = selected.Index, // 0 = nothing will be captured
+                reason = selected.Description,
+                autoIndex = auto.Index,
+                autoReason = auto.Description,
                 audience = audience is null ? null : new { audience.Value.Width, audience.Value.Height },
                 displays = displays.Select(d => new
                 {
