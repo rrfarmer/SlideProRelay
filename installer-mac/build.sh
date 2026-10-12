@@ -12,7 +12,10 @@
 #
 # Optional in both modes:
 #   --version 1.2.0        (default: 1.1.0)
-#   --arch    arm64|x64|universal   (default: universal)
+#   --arch    arm64|x64|universal   (default: arm64)
+#
+# Note: --arch universal currently yields a bundle whose Intel slice aborts at
+# launch ("Failed to initialize the VM"); see Step 2. Use arm64 or x64.
 #
 # Run from the repo root.
 
@@ -26,7 +29,7 @@ EXECUTABLE="SlideProRelay"          # Must match AssemblyName in .csproj
 TFM_DIR="net10.0-macos"             # Must match TargetFramework in .csproj
 
 VERSION="1.1.0"
-ARCH="universal"
+ARCH="arm64"
 TEAM_ID=""
 APPLE_ID=""
 APP_PASSWORD=""
@@ -128,6 +131,10 @@ cp -R "$PRIMARY_APP" "$APP_BUNDLE"
 
 # For a universal build, fatten the native Mach-O files (the app host executable
 # and the runtime dylibs) by merging the second architecture into the copy.
+#
+# Known issue: this is not enough. Everything else in the bundle comes from the
+# first architecture only, and the second slice fails to start the runtime
+# ("Failed to initialize the VM"), which is why arm64 is the default.
 if [[ "${#RIDS[@]}" -gt 1 ]]; then
     echo "  ► Creating universal binaries…"
     SECOND_RID="${RIDS[1]}"
@@ -254,6 +261,27 @@ fi
 
 rm -f "$COMPONENT_PKG"
 
+# ── Step 6: Notarize the .pkg (signed builds only) ────────────────────────────
+#
+# Notarizing the .app in Step 4 does not cover the installer. Gatekeeper checks
+# the .pkg itself and rejects it as "Unnotarized Developer ID" unless it has its
+# own ticket.
+
+if [[ "$SKIP_SIGNING" == false ]]; then
+    echo "  ► Submitting .pkg to Apple notarization (~1 min)…"
+    xcrun notarytool submit "$FINAL_PKG" \
+        --apple-id "$APPLE_ID" \
+        --team-id  "$TEAM_ID" \
+        --password "$APP_PASSWORD" \
+        --wait
+
+    echo "  ► Stapling notarization ticket to .pkg…"
+    xcrun stapler staple "$FINAL_PKG"
+
+    echo "  ► Checking Gatekeeper…"
+    spctl -a -vv -t install "$FINAL_PKG"
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 
 echo ""
@@ -264,6 +292,6 @@ if [[ "$SKIP_SIGNING" == true ]]; then
     echo "  warn when opening it on other Macs. On your own Mac, right-click"
     echo "  the .pkg and choose Open to bypass the warning."
 else
-    echo "  ✓ Signed installer ready: ${FINAL_PKG}"
+    echo "  ✓ Signed + notarized installer ready: ${FINAL_PKG}"
 fi
 echo ""
