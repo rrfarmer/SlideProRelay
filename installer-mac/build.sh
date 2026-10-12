@@ -11,7 +11,7 @@
 #     --password  <app-specific-password from appleid.apple.com>
 #
 # Optional in both modes:
-#   --version 1.2.0        (default: 1.0.0)
+#   --version 1.2.0        (default: 1.1.0)
 #   --arch    arm64|x64|universal   (default: universal)
 #
 # Run from the repo root.
@@ -25,7 +25,7 @@ APP_NAME="SlideProRelay"
 EXECUTABLE="SlideProRelay"          # Must match AssemblyName in .csproj
 TFM_DIR="net10.0-macos"             # Must match TargetFramework in .csproj
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 ARCH="universal"
 TEAM_ID=""
 APPLE_ID=""

@@ -88,7 +88,7 @@ Open ProPresenter → **Preferences** → **Network** → enable **Enable Networ
 .\installer\build.ps1 -Version 1.2.0
 ```
 
-Output: `installer\output\SlideProRelay-1.0.0-Setup.exe`. Without `-Version`, the version comes from `Directory.Build.props`.
+Output: `installer\output\SlideProRelay-<version>-Setup.exe`. Without `-Version`, the version comes from `Directory.Build.props`.
 
 **macOS app** (requires Xcode CLT and .NET macOS workload):
 
@@ -103,7 +103,7 @@ dotnet workload install macos
 ./installer-mac/build.sh --team-id YOUR_TEAM_ID --apple-id you@example.com --password xxxx-xxxx-xxxx-xxxx
 ```
 
-Output: `installer-mac/output/SlideProRelay-1.0.0.pkg`
+Output: `installer-mac/output/SlideProRelay-<version>.pkg`. The version defaults to the one set in `build.sh`; pass `--version` to override it.
 
 For unsigned builds, Gatekeeper will warn on first open — right-click the `.pkg` → Open to bypass.
 
