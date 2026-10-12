@@ -1,211 +1,171 @@
 # SlideProRelay Roadmap
 
+Status as of October 2026.
+
 ## Project Purpose
 
-Build a cross-platform local relay for ProPresenter 7 that runs on the same machine as ProPresenter, reads the currently presented slide text, and serves a browser page for phones or local devices. The first useful version should be small, reliable, and easy to run during a live service or event.
+Build a cross-platform local relay for ProPresenter 7 that runs on the same machine as ProPresenter, reads the currently presented slide text, and serves a browser page for phones or local devices. It should stay small, reliable, and easy to run during a live service or event.
 
 ## Working Assumptions
 
 - Runtime: .NET 10.
-- Server: ASP.NET Core.
-- Initial operating systems: Windows and macOS.
-- ProPresenter API: official HTTP API, default host `localhost`, default port `50001`.
-- First data source: `GET /v1/status/slide`.
-- First client experience: text-only live feed, not video.
-- Initial relay behavior: polling, not direct ProPresenter websocket usage.
-- Future expansion may include a slow screen-capture/upload mode.
+- Server: ASP.NET Core, hosted inside a Windows tray app or a macOS menu bar app (or run on its own from source).
+- Operating systems: Windows 10+ and macOS 13+.
+- ProPresenter API: official HTTP API, default host `localhost`, default port `50001`, with the real port auto-detected from ProPresenter's preferences.
+- Slide data source: `GET /v1/status/slide`, polled — not ProPresenter's websocket.
+- Default relay port: `5174`.
+- Client experience: a live text feed, with an optional screen view showing a capture of the output display. Not video.
+- Browser updates are pushed with Server-Sent Events.
 
 ## Phase 0: Discovery And Skeleton
 
 Status: complete.
 
-Goals:
-
-- Create the repository and solution structure.
-- Capture architecture assumptions and open questions.
-- Verify .NET 10 local build.
-- Keep the first server project intentionally minimal.
-
-Deliverables:
+Delivered:
 
 - Git repository.
 - .NET solution.
 - ASP.NET Core server project.
 - Roadmap document.
 
-Open questions:
+Questions raised here and how they were settled:
 
-- Should the local server have a desktop tray/config UI, or remain config-file/browser based?
-- What local port should the relay use by default?
-- Do phone clients need authentication on the local network?
-- Is combined slide text enough, or do we eventually need per-text-box structure?
+- Desktop tray/config UI, or config-file/browser based? Both: a tray / menu bar app hosts the relay, and settings live on a browser page at `/settings`.
+- Default relay port? `5174`.
+- Do phone clients need authentication on the local network? The phone view is open to the LAN with no login. The settings page and operator endpoints are served to loopback only. A PIN or token for the phone view is still open (Phase 5).
+- Is combined slide text enough, or do we need per-text-box structure? Still combined text per slide, plus notes. Per-text-box structure has not been needed yet.
 
 ## Phase 1: ProPresenter API Client
 
 Status: complete.
 
-Goals:
+Delivered:
 
-- Add a typed ProPresenter client around `HttpClient`.
-- Read `/version` for connection diagnostics.
-- Read `/v1/status/slide` for current and next slide text.
-- Add configuration for ProPresenter host, port, and polling interval.
-- Represent disconnected, unavailable, and invalid-response states cleanly.
-
-Likely implementation:
-
-- `ProPresenterOptions`
-- `IProPresenterClient`
-- `ProPresenterClient`
-- `SlideStatus`, `SlideText`, and connection status models.
-
-Acceptance criteria:
-
-- A developer can run the server and see current cached slide JSON from a relay endpoint.
-- If ProPresenter is closed or Network/API is disabled, the relay reports a useful status instead of crashing.
+- Typed ProPresenter client around `HttpClient` (`IProPresenterClient`, `ProPresenterClient`).
+- `/version` for connection diagnostics and `/v1/status/slide` for current and next slide text.
+- Configuration for host, port, and polling interval (`ProPresenterOptions`).
+- Disconnected, unavailable, and invalid-response states reported as a connection state instead of crashing.
+- Port auto-detection on Windows and macOS (`IProPresenterPortDetector`), re-checked after a failed poll.
+- Audience-screen size from `/v1/status/screens` and slide thumbnails from the presentation thumbnail endpoint.
 
 ## Phase 2: Fast Lyrics Relay
 
 Status: complete.
 
-Goals:
+Delivered:
 
-- Add a background polling service.
-- Cache the latest slide status in memory.
-- Detect meaningful changes using slide UUID and text.
-- Expose a stable local API for clients.
+- Background polling service with an in-memory cache of the latest slide status.
+- The cache publishes every poll result. Consumers that act on a slide change (screen capture, SlidePro.io) compare the slide UUID, falling back to its text.
+- A per-session count of how often each slide has been shown, exposed as `seenCount` / `isRepeat`.
+- Client endpoints: `GET /api/health`, `GET /api/current`.
 
-Candidate endpoints:
-
-- `GET /api/health`
-- `GET /api/current`
-- `GET /api/config`
-
-Acceptance criteria:
-
-- Multiple browser/phone clients can request the current slide without each one hitting ProPresenter directly.
-- Polling interval can be tuned without code changes.
-- Relay keeps working if ProPresenter temporarily disappears and returns.
+The planned `GET /api/config` was never built; `GET` / `POST /api/settings` covers it.
 
 ## Phase 3: Live Browser Feed
 
 Status: complete.
 
-Goals:
+Delivered:
 
-- Serve a simple phone-friendly web page.
-- Show current slide text prominently.
-- Optionally show next slide text in a secondary area.
-- Push updates from the relay to browsers.
-
-Preferred browser update mechanism:
-
-- Server-Sent Events from the relay, for example `GET /events`.
-
-Fallback:
-
-- Browser polling against `GET /api/current`.
-
-Acceptance criteria:
-
-- A phone on the same network can open the relay URL and see lyrics update.
-- The display remains readable at common phone sizes.
-- The page shows connection state when ProPresenter or the relay feed is unavailable.
+- Phone-friendly page at `/` showing the current slide text, with the next slide's text below it.
+- Updates pushed over Server-Sent Events at `GET /events`, with a heartbeat every 15 seconds.
+- Status line for live, ProPresenter offline, and reconnecting; the page reconnects on its own.
+- Slides with no text fall back to ProPresenter's slide thumbnail (`GET /api/slide-image`, experimental).
+- Text / Screen toggle, remembered per device.
+- QR code overlay for passing the link along.
 
 ## Phase 4: Configuration And Packaging
 
-Status: partially complete. LAN URL discovery, default port, env var overrides, and ProPresenter setup docs are done. Windows service / macOS launch agent packaging is deferred to a later iteration.
+Status: complete.
 
-Goals:
+Delivered:
 
-- Make first-run setup practical for non-developer use.
-- Support Windows and macOS packaging decisions.
-- Document ProPresenter setup steps.
+- Windows tray app with an Inno Setup installer: firewall rule, optional desktop icon, optional start with Windows.
+- macOS menu bar app with a `.pkg` installer, optional signing and notarization, and a Start at Login toggle (launch agent).
+- Both installers are self-contained, so no separate .NET install is needed.
+- Browser settings page at `/settings` with Overview, Connection, Capture, and API Integration tabs. Settings persist to a per-user `settings.json` and apply without a restart, except a relay-port change.
+- LAN URL discovery and a QR code for the phone URL.
+- Environment variable and `appsettings.json` overrides when running from source.
+- Update check in the Windows tray app, with download and install from the tray menu.
 
-Topics:
+Not done:
 
-- Config file location.
-- Environment variable overrides.
-- Command-line arguments.
-- Default relay port.
-- Windows service or startup shortcut.
-- macOS launch agent or simple app bundle.
-- Local firewall prompts and network binding.
-
-Acceptance criteria:
-
-- The relay can be started consistently on Windows and macOS.
-- The user can discover the phone URL easily.
-- Setup instructions include the ProPresenter Network/API settings to verify.
+- Windows runs as a tray app started from an optional Startup shortcut, not as a Windows service.
+- No update check on macOS.
+- No CI. `.github/workflows` is empty and tests run locally.
 
 ## Phase 5: Reliability For Live Use
 
-Goals:
+Status: partially complete.
 
-- Harden failure handling and observability.
-- Avoid runaway polling or noisy logs.
-- Keep a useful last-known slide state.
+Delivered:
 
-Topics:
+- Exponential backoff when ProPresenter is unreachable, capped at 30 seconds.
+- Log throttling during an outage: one warning, then occasional debug lines.
+- Browser reconnection and a visible connection state on the phone page.
+- The settings page, settings API, and operator diagnostics are served to loopback only; other devices get a `404`.
+- CORS limited to loopback-origin health polls.
+- Automated tests for the ProPresenter client, polling, display selection, capture coordination, and endpoint access.
 
-- Health checks.
-- Structured logs.
-- Retry/backoff behavior.
+Still open:
+
+- Keep the last-known slide on the phone page during an outage. Today the page clears and shows "ProPresenter offline".
+- A health check that reports ProPresenter's state. `/api/health` only says the relay is up; `/api/current` carries the connection state.
 - Poll duration metrics.
-- Browser reconnection behavior.
-- Optional local access token or PIN.
+- Optional local access token or PIN for the phone view.
 
-Acceptance criteria:
+## Phase 6: Screen Capture
 
-- Temporary API failures do not break connected browser clients.
-- Operators can tell whether the issue is ProPresenter, the relay, or the phone browser.
+Status: complete. This was planned as "slow capture mode research" and shipped as a feature.
 
-## Phase 6: Slow Capture Mode Research
+Delivered:
 
-Goals:
+- A JPEG of the real output display on each live-slide change, cached and served from `GET /api/screen-capture`, with `GET /api/screen-capture/key` naming the slide it belongs to.
+- Windows: DXGI Desktop Duplication. macOS: the built-in `screencapture` tool, which needs Screen Recording permission.
+- Captures are encoded at 85% JPEG quality and capped at 1920 px wide.
+- Display selection: a manual display always wins; otherwise the non-primary display matching ProPresenter's audience-screen size, then the first non-primary display.
+- Auto never captures the primary display. With one display attached, nothing is captured until the operator picks a display, so the operator's desktop is never published by accident.
+- `GET /api/displays` lists displays and explains the current choice; the settings page shows it under the display picker.
+- Screen view on the phone page, which waits for the capture of the current slide before swapping the image.
 
-- Investigate a future low-frequency screen capture mode.
-- Keep it separate from fast lyrics mode.
-- Decide whether capture belongs in the same app or an optional worker.
+Decisions:
 
-Possible flow:
+- Capture lives in the relay process, not a separate worker.
+- Capture is triggered by slide changes, not a timer.
+- It is additive: the ProPresenter thumbnail flow (`/api/slide-image`) stays.
 
-- Capture ProPresenter output or selected display/window.
-- Downscale and compress image.
-- Queue upload to external service.
-- Store upload status separately from lyrics feed.
+Not done:
 
-Risks:
+- Capturing a single window. Only whole displays are captured.
 
-- Cross-platform screen capture APIs differ significantly.
-- macOS screen recording permissions can affect setup.
-- Capturing the whole screen may expose sensitive operator UI.
-- Upload reliability and bandwidth need separate design from local lyrics updates.
+## Phase 7: SlidePro.io Integration
 
-Acceptance criteria for research:
+Status: complete for the first version.
 
-- Prototype can capture a chosen screen/window on Windows and macOS.
-- Permissions and packaging implications are documented before full implementation.
+Delivered:
 
-## Phase 7: External Web App Integration
+- Optional integration with SlidePro.io, off by default and configured under Settings → API Integration with an API key.
+- Text mode: posts the current and next slide text on each slide change.
+- Full Slide mode: uploads the screen capture for each new slide to a chosen presentation. A slide already uploaded this session is re-presented instead of uploaded again.
+- Presentation picker fed by the SlidePro API.
+- Failures are logged and dropped, so a SlidePro outage does not affect the local phone display.
+- The Windows update check uses SlidePro.io's release endpoint.
 
-Goals:
+See `docs/slidepro-public-api-integration-guide.md` for the API.
 
-- Define integration with the existing external web app once requirements are known.
-- Avoid coupling the local relay to an external API too early.
+Still open:
 
-Topics:
+- Upload queue and retry. A failed upload is not retried, and only the latest slide change is kept while one is in flight.
+- Offline behavior beyond dropping updates.
+- Privacy and data-retention notes for what is sent to SlidePro.io.
 
-- Auth model.
-- Tenant/event identity.
-- Upload queue and retry semantics.
-- Offline behavior.
-- Privacy and data retention.
+## Planned Features
 
-Acceptance criteria:
+From the README's "Coming Soon" list; none are started:
 
-- Integration can be enabled or disabled without affecting local lyrics mode.
-- Failures in external upload do not degrade local phone display.
+- Text customization: font size, color, and style on the phone page.
+- Chord charts alongside lyrics.
+- Translations: slide text in multiple languages.
 
 ## Handoff Notes For Future Sessions
 
@@ -214,14 +174,22 @@ Start by checking:
 ```powershell
 git status
 dotnet build
+dotnet test tests/SlideProRelay.Tests/SlideProRelay.Tests.csproj
 ```
+
+`dotnet build` at the repo root works on Windows, where the Mac project builds as a stub. On macOS, build individual projects, because the Windows tray project won't build there.
 
 Then review:
 
 - `README.md`
 - `docs/ROADMAP.md`
-- `src/SlideProRelay.Server/Program.cs`
+- `src/SlideProRelay.Server/ServerHost.cs` for service wiring and every endpoint
+- `src/SlideProRelay.Tray` and `src/SlideProRelay.Mac` for the host apps
 
-Next likely implementation step:
+Remaining work, in no set order:
 
-Build Phase 5 by hardening reliability: add exponential backoff when ProPresenter is unreachable, avoid log spam during outages, and keep the last-known slide visible on the browser page when the relay temporarily loses the ProPresenter connection.
+- The open Phase 5 items: last-known slide during an outage, a fuller health check, poll metrics, and an optional PIN for the phone view.
+- Retry and queueing for SlidePro.io uploads.
+- An update check for macOS.
+- CI for build and tests.
+- The planned features above.
