@@ -4,6 +4,7 @@ using QRCoder;
 using SlideProRelay.Server.ProPresenter;
 using SlideProRelay.Server.ProPresenter.Models;
 using SlideProRelay.Server.ScreenCapture;
+using SlideProRelay.Server.Security;
 using SlideProRelay.Server.Settings;
 using SlideProRelay.Server.SlidePro;
 using SlideProRelay.Server.Startup;
@@ -19,12 +20,36 @@ public static class ServerHost
     };
 
     /// <summary>
+    /// Routes served only to this machine (see <see cref="LoopbackOnly"/>): the
+    /// settings page and API, which expose the SlidePro API key and can restart
+    /// the relay, plus operator diagnostics. Every other route stays open to the
+    /// LAN because phones need it. An operator-only route added to
+    /// <see cref="MapEndpoints"/> must be listed here as well.
+    /// </summary>
+    public static readonly IReadOnlyList<string> OperatorPaths =
+    [
+        "/settings",
+        "/api/settings",
+        "/api/network-url",
+        "/api/slidepro/presentations",
+        "/api/displays",
+        "/api/raw",
+    ];
+
+    // The one cross-origin call the relay expects: after a port change the
+    // settings page polls /api/health on the new port (see below).
+    private const string HealthPollCors = "HealthPoll";
+
+    /// <summary>
     /// Creates and configures the WebApplication but does not start it.
     /// Call RunAsync() for CLI use or StartAsync() for hosted (tray) use.
+    /// <paramref name="configureBuilder"/> runs just before the app is built;
+    /// tests use it to swap Kestrel for the in-memory TestServer.
     /// </summary>
     public static WebApplication Create(
         string[] args,
-        IEnumerable<KeyValuePair<string, string?>>? configOverrides = null)
+        IEnumerable<KeyValuePair<string, string?>>? configOverrides = null,
+        Action<WebApplicationBuilder>? configureBuilder = null)
     {
         var builder = WebApplication.CreateBuilder(args);
 
@@ -39,9 +64,13 @@ public static class ServerHost
         var relayPort = builder.Configuration.GetValue<int>("Relay:Port", 5174);
         builder.WebHost.UseUrls($"http://*:{relayPort}");
 
-        // CORS — permits cross-origin health polls after a port change (local app only).
-        builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
-            p.SetIsOriginAllowed(_ => true).AllowAnyMethod().AllowAnyHeader()));
+        // CORS is needed for exactly one call: after a port change the settings
+        // page, still open on http://localhost:<old port>, polls /api/health on
+        // the new port until the relay is back. Only that endpoint carries the
+        // policy, and only loopback origins are allowed. Nothing else is
+        // cross-origin: the phone page uses same-origin requests.
+        builder.Services.AddCors(o => o.AddPolicy(HealthPollCors, p =>
+            p.SetIsOriginAllowed(LoopbackOnly.IsLoopbackOrigin).WithMethods("GET")));
 
         builder.Services.Configure<ProPresenterOptions>(
             builder.Configuration.GetSection(ProPresenterOptions.SectionName));
@@ -98,7 +127,14 @@ public static class ServerHost
         builder.Services.AddSingleton<RestartSignal>();
         builder.Services.AddSingleton(mutableCfg);
 
+        configureBuilder?.Invoke(builder);
+
         var app = builder.Build();
+
+        // Operator-only routes are hidden from the LAN before routing runs, so a
+        // non-loopback caller gets an empty 404 whatever the method or body.
+        app.UseLoopbackOnly(OperatorPaths);
+        app.UseRouting();
         app.UseCors();
 
         MapEndpoints(app);
@@ -108,8 +144,10 @@ public static class ServerHost
 
     private static void MapEndpoints(WebApplication app)
     {
-        app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
+        app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }))
+           .RequireCors(HealthPollCors);
 
+        // Operator diagnostic: loopback only (see OperatorPaths).
         app.MapGet("/api/raw", async (IProPresenterClient client) =>
         {
             var raw = await client.GetRawSlideJsonAsync();
@@ -242,6 +280,7 @@ public static class ServerHost
         // Proxies to SlidePro's /presentations endpoint so the tray settings UI can
         // populate a dropdown without knowing the base URL. apiKey can be passed as a
         // query param so the user can refresh the list before saving their key.
+        // Loopback only (see OperatorPaths): the key travels in the query string.
         app.MapGet("/api/slidepro/presentations", async (
             SlideProApiClient slideProClient,
             IOptionsMonitor<SlideProOptions> slideProOpts,
@@ -273,7 +312,7 @@ public static class ServerHost
 
         app.MapGet("/", () => Results.Content(HtmlPage.Content, "text/html"));
 
-        // ── Settings web UI + API ──────────────────────────────────────────────
+        // ── Settings web UI + API — loopback only (see OperatorPaths) ──────────
 
         app.MapGet("/settings", () => Results.Content(SettingsPage.Content, "text/html"));
 
